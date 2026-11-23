@@ -33,6 +33,7 @@ export function AdminRewardsTab({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialRewards.pageSize);
   const [editingRewardId, setEditingRewardId] = useState<string | undefined>(
     undefined
   );
@@ -49,7 +50,7 @@ export function AdminRewardsTab({
   const { data: rewardsData, isFetching } = useAdminPaginatedList({
     resource: "rewards",
     page,
-    pageSize: initialRewards.pageSize,
+    pageSize,
     initialData: initialRewards,
     onPageClamp: setPage,
   });
@@ -328,6 +329,12 @@ export function AdminRewardsTab({
               itemLabel="phần quà"
               isLoading={isFetching}
               onPageChange={setPage}
+              pageSize={pageSize}
+              pageSizeOptions={[8, 15, 30, 50]}
+              onPageSizeChange={(next) => {
+                setPageSize(next);
+                setPage(1);
+              }}
             />
           </>
         )}

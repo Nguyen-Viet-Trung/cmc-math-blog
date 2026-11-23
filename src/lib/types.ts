@@ -30,7 +30,7 @@ export interface SiteSettings {
   announcement: string;
 }
 
-export type ThreadType = "question" | "news" | "research";
+export type ThreadType = "question" | "news" | "research" | "challenge";
 export type ThreadStatus = "open" | "solved" | "closed";
 
 export interface ThreadSummary {
@@ -40,6 +40,7 @@ export interface ThreadSummary {
   imageCount: number;
   gradeTag: string;
   threadType: ThreadType;
+  challengeEndsAt: string | null;
   bountyPoints: number;
   authorRewardPoints: number;
   status: "open" | "solved" | "closed";
@@ -67,6 +68,7 @@ export interface ThreadSummary {
 export interface ReplyItem {
   id: string;
   threadId: string;
+  parentReplyId: string | null;
   content: string;
   imageUrls: string[];
   isAccepted: boolean;
@@ -85,6 +87,12 @@ export interface ReplyItem {
   };
 }
 
+export interface ThreadCollectionRef {
+  id: string;
+  slug: string;
+  title: string;
+}
+
 export interface ThreadDetail {
   id: string;
   title: string;
@@ -92,6 +100,7 @@ export interface ThreadDetail {
   imageUrls: string[];
   gradeTag: string;
   threadType: ThreadType;
+  challengeEndsAt: string | null;
   bountyPoints: number;
   authorRewardPoints: number;
   status: "open" | "solved" | "closed";
@@ -99,6 +108,9 @@ export interface ThreadDetail {
   isPinned: boolean;
   viewCount: number;
   replyCount: number;
+  hiddenRepliesCount: number;
+  viewerBookmarked: boolean;
+  collections: ThreadCollectionRef[];
   createdAt: string;
   updatedAt?: string;
   author: {
@@ -121,11 +133,13 @@ export interface ThreadDetail {
 export interface ThreadDiscussionSnapshot {
   status: "open" | "solved" | "closed";
   threadType: ThreadType;
+  challengeEndsAt: string | null;
   acceptedReplyId: string | null;
   bountyPoints: number;
   authorRewardPoints: number;
   isPinned: boolean;
   replyCount: number;
+  hiddenRepliesCount: number;
   replies: ReplyItem[];
 }
 
@@ -133,6 +147,7 @@ export interface AdminThreadManageItem {
   id: string;
   title: string;
   threadType: ThreadType;
+  challengeEndsAt: string | null;
   gradeTag: string;
   categoryName: string;
   status: "open" | "solved" | "closed";
@@ -202,7 +217,8 @@ export interface PointTransactionItem {
     | "admin_grant"
     | "admin_deduct"
     | "reward_redeem"
-    | "reward_refund";
+    | "reward_refund"
+    | "challenge_reward";
   reason: string;
   referenceId: string | null;
   createdAt: string;
@@ -261,7 +277,9 @@ export type NotificationType =
   | "answer_accepted"
   | "author_reward"
   | "redemption_update"
-  | "system";
+  | "system"
+  | "reply_mention"
+  | "challenge_award";
 
 export interface NotificationItem {
   id: string;
@@ -272,6 +290,31 @@ export interface NotificationItem {
   href: string;
   isRead: boolean;
   createdAt: string;
+}
+
+export interface CollectionSummary {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  coverColor: string;
+  isPublished: boolean;
+  threadCount: number;
+  solvedCount: number;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CollectionThreadItem {
+  thread: ThreadSummary;
+  sortOrder: number;
+  note: string;
+  addedAt: string;
+}
+
+export interface CollectionDetail extends CollectionSummary {
+  items: CollectionThreadItem[];
 }
 
 export interface PaginatedThreadsResult {

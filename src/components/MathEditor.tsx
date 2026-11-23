@@ -4,15 +4,14 @@ import { useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Edit3, Eye, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { compressImageToWebP, formatBytes } from "@/lib/image-compression";
 
 const MathContent = dynamic(
   () => import("./MathContent").then((m) => m.MathContent),
   {
-    loading: () => (
-      <div className="h-16 animate-pulse rounded-md bg-muted/60" />
-    ),
+    loading: () => <Skeleton className="h-24 w-full rounded-md" />,
   }
 );
 
@@ -30,6 +29,27 @@ const LATEX_SNIPPETS = [
   { label: "Giới hạn lim", insert: "$\\lim_{x \\to +\\infty} f(x)$" },
   { label: "Bất đẳng thức", insert: "$a \\le b \\ge c \\neq 0$" },
   { label: "Hình học △", insert: "$\\triangle ABC, \\widehat{ABC} = 90^\\circ$" },
+];
+
+const BLOCK_SNIPPETS = [
+  {
+    label: "+ Gợi ý (Hint)",
+    insert: "\n:::hint Gợi ý 1\nThử đặt ẩn phụ hoặc đánh giá bằng bất đẳng thức...\n:::\n",
+  },
+  {
+    label: "+ Lời giải ẩn",
+    insert: "\n:::solution Lời giải chi tiết\nTa có $...$\n:::\n",
+  },
+  {
+    label: "+ Đồ thị SVG",
+    insert:
+      "\n```graph\nx: -5..5\ny: -4..6\nf(x) = x^2 - 2*x - 1\ng(x) = x + 1\npoint: (1, -2) I\n```\n",
+  },
+  {
+    label: "+ GeoGebra",
+    insert:
+      "\n```geogebra\nhttps://www.geogebra.org/m/MA_HINH_VE | Hình vẽ minh họa\n```\n",
+  },
 ];
 
 interface MathEditorProps {
@@ -153,18 +173,33 @@ export function MathEditor({
         </Tabs>
 
         {tab === "write" && (
-          <div className="mt-2 flex flex-wrap gap-1.5 border-t border-dashed border-border pt-2">
-            {LATEX_SNIPPETS.map((s) => (
-              <button
-                key={s.label}
-                type="button"
-                title={`Chèn: ${s.insert}`}
-                onClick={() => insertSnippet(s.insert)}
-                className="rounded-md border border-input bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
-              >
-                {s.label}
-              </button>
-            ))}
+          <div className="mt-2 space-y-1.5 border-t border-dashed border-border pt-2">
+            <div className="flex flex-wrap gap-1.5">
+              {LATEX_SNIPPETS.map((s) => (
+                <button
+                  key={s.label}
+                  type="button"
+                  title={`Chèn: ${s.insert}`}
+                  onClick={() => insertSnippet(s.insert)}
+                  className="rounded-md border border-input bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:border-primary hover:bg-primary hover:text-primary-foreground"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {BLOCK_SNIPPETS.map((s) => (
+                <button
+                  key={s.label}
+                  type="button"
+                  title={`Chèn khối: ${s.label}`}
+                  onClick={() => insertSnippet(s.insert)}
+                  className="rounded-md border border-primary/25 bg-primary/5 px-2.5 py-1 text-[11px] font-semibold text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
           </div>
         )}
       </div>
@@ -180,7 +215,10 @@ export function MathEditor({
           className="block w-full resize-y border-0 bg-card p-4 font-mono text-[0.875rem] leading-[1.65] text-foreground placeholder:text-muted-foreground focus:outline-none"
         />
       ) : (
-        <div className="min-h-[165px] bg-card p-5">
+        <div
+          style={{ minHeight: `${Math.max(165, rows * 26)}px` }}
+          className="bg-card p-5"
+        >
           {value.trim() || imageUrls.length > 0 ? (
             <MathContent content={value} imageUrls={imageUrls} />
           ) : (

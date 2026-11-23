@@ -53,7 +53,8 @@ CREATE TABLE IF NOT EXISTS public.threads (
   content TEXT NOT NULL,
   image_urls TEXT[] NOT NULL DEFAULT '{}',
   grade_tag TEXT NOT NULL DEFAULT 'Chung',
-  thread_type TEXT NOT NULL DEFAULT 'question' CHECK (thread_type IN ('question', 'news', 'research')),
+  thread_type TEXT NOT NULL DEFAULT 'question' CHECK (thread_type IN ('question', 'news', 'research', 'challenge')),
+  challenge_ends_at TIMESTAMPTZ,
   bounty_points INTEGER NOT NULL DEFAULT 10 CHECK (bounty_points >= 0),
   author_reward_points INTEGER NOT NULL DEFAULT 0 CHECK (author_reward_points >= 0),
   status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'solved', 'closed')),
@@ -70,6 +71,7 @@ CREATE TABLE IF NOT EXISTS public.replies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   thread_id UUID NOT NULL REFERENCES public.threads(id) ON DELETE CASCADE,
   author_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  parent_reply_id UUID REFERENCES public.replies(id) ON DELETE CASCADE,
   content TEXT NOT NULL,
   image_urls TEXT[] NOT NULL DEFAULT '{}',
   is_accepted BOOLEAN NOT NULL DEFAULT FALSE,
@@ -91,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.point_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   amount INTEGER NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund')),
+  type TEXT NOT NULL CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund', 'challenge_reward')),
   reason TEXT NOT NULL,
   reference_id UUID,
   created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -145,13 +147,57 @@ CREATE TABLE IF NOT EXISTS public.feedbacks (
 CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system')),
+  type TEXT NOT NULL CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system', 'reply_mention', 'challenge_award')),
   title TEXT NOT NULL,
   body TEXT NOT NULL DEFAULT '',
   href TEXT NOT NULL DEFAULT '/',
   is_read BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- 12. Sổ tay cá nhân — Lưu bài toán hay (Bookmarks)
+CREATE TABLE IF NOT EXISTS public.thread_bookmarks (
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  thread_id UUID NOT NULL REFERENCES public.threads(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, thread_id)
+);
+
+-- 13. Bộ sưu tập Chuyên đề Toán học (Collections)
+CREATE TABLE IF NOT EXISTS public.collections (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  cover_color TEXT NOT NULL DEFAULT 'blue',
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 14. Liên kết bài viết trong Bộ sưu tập Chuyên đề
+CREATE TABLE IF NOT EXISTS public.collection_threads (
+  collection_id UUID NOT NULL REFERENCES public.collections(id) ON DELETE CASCADE,
+  thread_id UUID NOT NULL REFERENCES public.threads(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (collection_id, thread_id)
+);
+
+-- Nâng cấp idempotent cho các DB đã khởi tạo trước đó
+ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS challenge_ends_at TIMESTAMPTZ;
+ALTER TABLE public.threads DROP CONSTRAINT IF EXISTS threads_thread_type_check;
+ALTER TABLE public.threads ADD CONSTRAINT threads_thread_type_check CHECK (thread_type IN ('question', 'news', 'research', 'challenge'));
+
+ALTER TABLE public.replies ADD COLUMN IF NOT EXISTS parent_reply_id UUID REFERENCES public.replies(id) ON DELETE CASCADE;
+
+ALTER TABLE public.point_transactions DROP CONSTRAINT IF EXISTS point_transactions_type_check;
+ALTER TABLE public.point_transactions ADD CONSTRAINT point_transactions_type_check CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund', 'challenge_reward'));
+
+ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
+ALTER TABLE public.notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system', 'reply_mention', 'challenge_award'));
 
 -- Indexes tối ưu tốc độ truy vấn
 CREATE INDEX IF NOT EXISTS idx_threads_category_created ON public.threads(category_id, created_at DESC);
@@ -180,6 +226,13 @@ CREATE INDEX IF NOT EXISTS idx_redemptions_user_created ON public.redemptions(us
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON public.notifications(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_cat_created ON public.feedbacks(category, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_created_desc ON public.feedbacks(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_challenge_ends ON public.threads(challenge_ends_at DESC) WHERE thread_type = 'challenge';
+CREATE INDEX IF NOT EXISTS idx_replies_parent_id ON public.replies(parent_reply_id) WHERE parent_reply_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_thread_bookmarks_user_created ON public.thread_bookmarks(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_thread_bookmarks_thread_id ON public.thread_bookmarks(thread_id);
+CREATE INDEX IF NOT EXISTS idx_collections_published_updated ON public.collections(is_published, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_collection_threads_col_order ON public.collection_threads(collection_id, sort_order ASC, added_at ASC);
+CREATE INDEX IF NOT EXISTS idx_collection_threads_thread_id ON public.collection_threads(thread_id);
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.
@@ -195,6 +248,9 @@ ALTER TABLE public.rewards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.redemptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feedbacks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.thread_bookmarks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.collection_threads ENABLE ROW LEVEL SECURITY;
 
 -- Khởi tạo cấu hình mặc định
 INSERT INTO public.site_settings (id, site_name, default_solved_points)

@@ -26,6 +26,7 @@ export interface AdminDashboardCounts {
   repliesCount: number;
   feedbacksCount: number;
   openFeedbacksCount: number;
+  collectionsCount: number;
 }
 
 export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
@@ -39,6 +40,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       repliesCount: 0,
       feedbacksCount: 0,
       openFeedbacksCount: 0,
+      collectionsCount: 0,
     };
   }
 
@@ -52,7 +54,8 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       (SELECT COUNT(*)::int FROM public.threads) AS threads_count,
       (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
       (SELECT COUNT(*)::int FROM public.feedbacks) AS feedbacks_count,
-      (SELECT COUNT(*)::int FROM public.feedbacks WHERE status IN ('open', 'in_progress')) AS open_feedbacks_count
+      (SELECT COUNT(*)::int FROM public.feedbacks WHERE status IN ('open', 'in_progress')) AS open_feedbacks_count,
+      (SELECT COUNT(*)::int FROM public.collections) AS collections_count
   `;
   const r = rows[0] ?? {};
   return {
@@ -64,6 +67,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
     repliesCount: Number(r.replies_count ?? 0),
     feedbacksCount: Number(r.feedbacks_count ?? 0),
     openFeedbacksCount: Number(r.open_feedbacks_count ?? 0),
+    collectionsCount: Number(r.collections_count ?? 0),
   };
 }
 
@@ -324,6 +328,7 @@ export async function listAdminThreadsPaginated(params: {
       t.id,
       t.title,
       t.thread_type,
+      t.challenge_ends_at,
       t.grade_tag,
       t.status,
       t.bounty_points,
@@ -386,6 +391,9 @@ export async function listAdminThreadsPaginated(params: {
     id: String(r.id),
     title: String(r.title),
     threadType: normalizeThreadType(r.thread_type),
+    challengeEndsAt: r.challenge_ends_at
+      ? new Date(String(r.challenge_ends_at)).toISOString()
+      : null,
     gradeTag: String(r.grade_tag ?? "Chung"),
     categoryName: String(r.category_name),
     status: (r.status as "open" | "solved" | "closed") ?? "open",

@@ -1,6 +1,7 @@
 import { HomeFeedFilters } from "@/app/_components/HomeFeedFilters";
 import { HomeRightRail } from "@/app/_components/HomeRightRail";
 import { HomeThreadList } from "@/app/_components/HomeThreadList";
+import { listActiveChallenges } from "@/lib/collection-service";
 import {
   getCategories,
   getLeaderboard,
@@ -8,6 +9,7 @@ import {
   listActiveRewards,
   listThreadsPaginated,
 } from "@/lib/forum-service";
+import { normalizePagination } from "@/lib/pagination";
 import type { ThreadType } from "@/lib/types";
 
 export default async function HomePage({
@@ -19,14 +21,16 @@ export default async function HomePage({
     type?: string;
     q?: string;
     page?: string;
+    pageSize?: string;
   }>;
 }) {
   const params = await searchParams;
   const activeCat = params.cat || "";
   const activeType: ThreadType | "all" =
     params.type === "question" ||
-    params.type === "news" ||
-    params.type === "research"
+      params.type === "news" ||
+      params.type === "research" ||
+      params.type === "challenge"
       ? params.type
       : "all";
   const activeStatus =
@@ -34,16 +38,17 @@ export default async function HomePage({
       ? params.status
       : "all";
   const searchQuery = params.q?.trim() || "";
-  const parsedPage = Number(params.page);
-  const currentPage =
-    Number.isFinite(parsedPage) && parsedPage >= 1
-      ? Math.floor(parsedPage)
-      : 1;
+  const { page: currentPage, pageSize: currentPageSize } = normalizePagination(
+    params.page,
+    params.pageSize,
+    20,
+    50
+  );
   const hasActiveFilter = Boolean(
     activeCat || activeStatus !== "all" || activeType !== "all" || searchQuery
   );
 
-  const [settings, categories, paginated, leaderboard, rewards] =
+  const [settings, categories, paginated, leaderboard, rewards, challenges] =
     await Promise.all([
       getSiteSettings(),
       getCategories(),
@@ -53,10 +58,11 @@ export default async function HomePage({
         threadType: activeType,
         query: searchQuery || undefined,
         page: currentPage,
-        pageSize: 20,
+        pageSize: currentPageSize,
       }),
       getLeaderboard(5),
       listActiveRewards(),
+      listActiveChallenges(3),
     ]);
 
   const activeLeaders = leaderboard.filter(
@@ -79,6 +85,7 @@ export default async function HomePage({
             activeCat={activeCat}
             activeStatus={activeStatus}
             searchQuery={searchQuery}
+            pageSize={paginated.pageSize}
             threadCount={paginated.totalCount}
             categories={categories}
           />
@@ -87,6 +94,7 @@ export default async function HomePage({
             hasActiveFilter={hasActiveFilter}
             pagination={{
               page: paginated.page,
+              pageSize: paginated.pageSize,
               totalPages: paginated.totalPages,
               totalCount: paginated.totalCount,
               activeType,
@@ -97,7 +105,11 @@ export default async function HomePage({
           />
         </section>
 
-        <HomeRightRail activeLeaders={activeLeaders} rewards={rewards} />
+        <HomeRightRail
+          activeLeaders={activeLeaders}
+          rewards={rewards}
+          challenges={challenges}
+        />
       </div>
     </div>
   );

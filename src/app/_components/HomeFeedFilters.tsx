@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 const TYPE_TABS: { key: ThreadType | "all"; label: string }[] = [
   { key: "all", label: "Tất cả" },
   { key: "question", label: "Hỏi bài" },
+  { key: "challenge", label: "Thử thách" },
   { key: "news", label: "News" },
   { key: "research", label: "Research" },
 ];
@@ -24,6 +25,7 @@ interface HomeFeedFiltersProps {
   activeCat: string;
   activeStatus: "all" | "open" | "solved";
   searchQuery: string;
+  pageSize?: number;
   threadCount: number;
   categories: Category[];
 }
@@ -33,6 +35,7 @@ export function HomeFeedFilters({
   activeCat,
   activeStatus,
   searchQuery,
+  pageSize = 20,
   threadCount,
   categories,
 }: HomeFeedFiltersProps) {
@@ -45,6 +48,9 @@ export function HomeFeedFilters({
         {activeCat && <input type="hidden" name="cat" value={activeCat} />}
         {activeStatus !== "all" && (
           <input type="hidden" name="status" value={activeStatus} />
+        )}
+        {pageSize !== 20 && (
+          <input type="hidden" name="pageSize" value={pageSize} />
         )}
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -61,6 +67,7 @@ export function HomeFeedFilters({
                 type: activeType,
                 cat: activeCat,
                 status: activeStatus,
+                pageSize,
               })}
               aria-label="Xóa từ khóa tìm kiếm"
               className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
@@ -90,6 +97,7 @@ export function HomeFeedFilters({
                       ? "all"
                       : activeStatus,
                   q: searchQuery,
+                  pageSize,
                 })}
                 className={cn(
                   "border-b-2 pb-2.5 text-[13.5px] transition-colors",
@@ -117,6 +125,7 @@ export function HomeFeedFilters({
                       cat: activeCat,
                       status: st.key,
                       q: searchQuery,
+                      pageSize,
                     })}
                     className={cn(
                       "rounded px-2 py-0.5 transition-colors",
@@ -146,6 +155,7 @@ export function HomeFeedFilters({
               type: activeType,
               status: activeStatus,
               q: searchQuery,
+              pageSize,
             })}
             className={cn(
               "rounded-md px-2.5 py-1 text-xs transition-colors",
@@ -166,6 +176,7 @@ export function HomeFeedFilters({
                   cat: c.slug,
                   status: activeStatus,
                   q: searchQuery,
+                  pageSize,
                 })}
                 className={cn(
                   "rounded-md px-2.5 py-1 text-xs transition-colors",

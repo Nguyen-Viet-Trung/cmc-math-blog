@@ -10,6 +10,7 @@ export const ALLOWED_THREAD_TYPES: readonly ThreadType[] = [
   "question",
   "news",
   "research",
+  "challenge",
 ] as const;
 
 export function isValidThreadType(val: unknown): val is ThreadType {
@@ -559,4 +560,203 @@ export function sanitizeRedirectPath(raw: string | null | undefined): string {
     return "/";
   }
   return trimmed;
+}
+
+/**
+ * Kiểm tra bài Thử thách Tuần đang trong chế độ ẩn bài nộp (Blind Submission) hay chưa:
+ * Chỉ ẩn khi `threadType === "challenge"`, trạng thái đang `open` và chưa quá hạn `challengeEndsAt`.
+ */
+export function isChallengeBlindActive(
+  threadType: ThreadType,
+  status: "open" | "solved" | "closed",
+  challengeEndsAt: string | null,
+  nowMs: number = Date.now()
+): boolean {
+  if (threadType !== "challenge" || status !== "open" || !challengeEndsAt) {
+    return false;
+  }
+  const endMs = new Date(challengeEndsAt).getTime();
+  if (!Number.isFinite(endMs)) return false;
+  return nowMs < endMs;
+}
+
+/**
+ * Khi chế độ Blind Submission đang bật, học sinh thường chỉ thấy bài nộp của chính mình
+ * hoặc thông báo/hướng dẫn từ Admin / tác giả đề bài.
+ */
+export function canViewReplyInChallenge(input: {
+  isBlindActive: boolean;
+  viewerId: string | null;
+  viewerRole: "student" | "admin" | null;
+  threadAuthorId: string;
+  replyAuthorId: string;
+  replyAuthorRole: "student" | "admin";
+}): boolean {
+  if (!input.isBlindActive) return true;
+  if (input.viewerRole === "admin") return true;
+  if (input.viewerId && input.viewerId === input.threadAuthorId) return true;
+  if (input.viewerId && input.viewerId === input.replyAuthorId) return true;
+  if (
+    input.replyAuthorRole === "admin" ||
+    input.replyAuthorId === input.threadAuthorId
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Kiểm tra hạn nộp của bài Thử thách Tuần (cho phép từ 10 phút tới tối đa 90 ngày tới).
+ */
+export function validateChallengeDeadline(
+  rawIso: string | null | undefined,
+  nowMs: number = Date.now()
+): { ok: true; iso: string } | { ok: false; error: string } {
+  if (!rawIso || !rawIso.trim()) {
+    return { ok: false, error: "Vui lòng chọn thời hạn kết thúc thử thách." };
+  }
+  const parsed = new Date(rawIso);
+  if (Number.isNaN(parsed.getTime())) {
+    return { ok: false, error: "Thời hạn thử thách không hợp lệ." };
+  }
+  const minMs = nowMs + 10 * 60 * 1000;
+  const maxMs = nowMs + 90 * 24 * 60 * 60 * 1000;
+  if (parsed.getTime() < minMs) {
+    return {
+      ok: false,
+      error: "Thời hạn thử thách cần cách hiện tại ít nhất 10 phút.",
+    };
+  }
+  if (parsed.getTime() > maxMs) {
+    return {
+      ok: false,
+      error: "Thời hạn thử thách tối đa là 90 ngày tính từ hiện tại.",
+    };
+  }
+  return { ok: true, iso: parsed.toISOString() };
+}
+
+/**
+ * Kiểm tra điều kiện Admin chấm & trao thưởng lời giải đúng cho bài Thử thách Tuần
+ * (cho phép chọn nhiều học sinh giải đúng, mỗi học sinh nhận thưởng tối đa 1 lần / thử thách).
+ */
+export function validateChallengeAward(input: {
+  callerRole: "student" | "admin";
+  threadType: ThreadType;
+  replyAuthorId: string;
+  threadAuthorId: string;
+  replyAuthorBanned: boolean;
+  alreadyAccepted: boolean;
+  alreadyRewardedUser: boolean;
+  bountyPoints: number;
+}): RuleResult {
+  if (input.callerRole !== "admin") {
+    return {
+      ok: false,
+      error: "Chỉ Quản trị viên mới có quyền chấm điểm bài Thử thách Tuần.",
+      statusCode: 403,
+    };
+  }
+  if (input.threadType !== "challenge") {
+    return {
+      ok: false,
+      error: "Bài viết này không phải là bài Thử thách Tuần.",
+      statusCode: 400,
+    };
+  }
+  if (input.alreadyAccepted) {
+    return {
+      ok: false,
+      error: "Bài nộp này đã được chấm đúng và trao thưởng trước đó.",
+      statusCode: 409,
+    };
+  }
+  if (input.alreadyRewardedUser) {
+    return {
+      ok: false,
+      error: "Học sinh này đã nhận thưởng cho thử thách này rồi.",
+      statusCode: 409,
+    };
+  }
+  if (input.replyAuthorId === input.threadAuthorId) {
+    return {
+      ok: false,
+      error: "Không thể tự trao thưởng cho tác giả đề thử thách.",
+      statusCode: 400,
+    };
+  }
+  if (input.replyAuthorBanned) {
+    return {
+      ok: false,
+      error: "Tài khoản học sinh đang bị khóa nên không thể nhận điểm.",
+      statusCode: 400,
+    };
+  }
+  if (!Number.isInteger(input.bountyPoints) || input.bountyPoints <= 0) {
+    return {
+      ok: false,
+      error: "Mức điểm thưởng thử thách phải lớn hơn 0.",
+      statusCode: 400,
+    };
+  }
+  return { ok: true };
+}
+
+export function slugifyCollectionTitle(raw: string): string {
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "d")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+}
+
+export function validateCollectionInput(input: {
+  title: string;
+  slug?: string;
+  description?: string;
+}): { ok: true; title: string; slug: string; description: string } | { ok: false; error: string } {
+  const title = input.title.trim();
+  if (title.length < 3 || title.length > 120) {
+    return {
+      ok: false,
+      error: "Tên bộ sưu tập chuyên đề cần từ 3 đến 120 ký tự.",
+    };
+  }
+  const rawSlug = input.slug?.trim() ? input.slug : title;
+  const slug = slugifyCollectionTitle(rawSlug);
+  if (slug.length < 2) {
+    return {
+      ok: false,
+      error: "Đường dẫn (slug) của bộ sưu tập không hợp lệ.",
+    };
+  }
+  const description = (input.description ?? "").trim().slice(0, 600);
+  return { ok: true, title, slug, description };
+}
+
+/**
+ * Trích xuất danh sách tên được nhắc tới dạng `@[Nguyễn Minh Khôi]` hoặc `@ten` (tối đa 5 người/bình luận).
+ */
+export function extractMentionedNames(content: string): string[] {
+  const found = new Set<string>();
+  // Ưu tiên cú pháp rõ ràng @[Tên Đầy Đủ] do nút Trả lời/Nhắc tên tạo ra
+  const bracketRe = /@\[([^\]\n]{2,50})\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = bracketRe.exec(content)) !== null) {
+    const cleaned = match[1].trim();
+    if (cleaned) found.add(cleaned);
+    if (found.size >= 5) return Array.from(found);
+  }
+  // Cú pháp ngắn @token không chứa khoảng trắng (tránh nhầm email a@b.com)
+  const tokenRe = /(?:^|[\s(])@([\p{L}0-9_.-]{2,32})/gu;
+  while ((match = tokenRe.exec(content)) !== null) {
+    const cleaned = match[1].replace(/[.,!?;:]+$/, "").trim();
+    if (cleaned.length >= 2) found.add(cleaned);
+    if (found.size >= 5) break;
+  }
+  return Array.from(found);
 }

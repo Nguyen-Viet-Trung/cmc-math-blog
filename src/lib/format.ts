@@ -61,7 +61,23 @@ export function toDateInputValue(iso: string): string {
 export function getThreadTypeLabel(type: ThreadType): string {
   if (type === "news") return "News";
   if (type === "research") return "Research";
+  if (type === "challenge") return "Thử thách";
   return "Hỏi bài";
+}
+
+export function formatRemainingTime(
+  endsAtIso: string,
+  nowMs: number = Date.now()
+): string {
+  const diffMs = new Date(endsAtIso).getTime() - nowMs;
+  if (!Number.isFinite(diffMs) || diffMs <= 0) return "Đã hết hạn";
+  const mins = Math.floor(diffMs / 60_000);
+  if (mins < 60) return `Còn ${Math.max(1, mins)} phút`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `Còn ${hours} giờ`;
+  const days = Math.floor(hours / 24);
+  const remHours = hours % 24;
+  return remHours > 0 ? `Còn ${days} ngày ${remHours} giờ` : `Còn ${days} ngày`;
 }
 
 export function buildHomeFilterUrl(params: {
@@ -70,6 +86,7 @@ export function buildHomeFilterUrl(params: {
   type?: string;
   q?: string;
   page?: number;
+  pageSize?: number;
 }): string {
   const sp = new URLSearchParams();
   if (params.type && params.type !== "all") sp.set("type", params.type);
@@ -77,6 +94,9 @@ export function buildHomeFilterUrl(params: {
   if (params.status && params.status !== "all") sp.set("status", params.status);
   if (params.q?.trim()) sp.set("q", params.q.trim());
   if (params.page && params.page > 1) sp.set("page", String(Math.floor(params.page)));
+  if (params.pageSize && params.pageSize !== 20) {
+    sp.set("pageSize", String(Math.floor(params.pageSize)));
+  }
   const qs = sp.toString();
   return qs ? `/?${qs}` : "/";
 }

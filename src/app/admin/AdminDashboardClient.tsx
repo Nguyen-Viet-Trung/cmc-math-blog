@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   FileText,
   Gift,
+  Layers,
   MessageSquareWarning,
   Settings,
   Users,
@@ -69,11 +70,20 @@ const AdminSettingsTab = dynamic(
   { loading: () => <AdminTabSkeleton /> }
 );
 
+const AdminCollectionsTab = dynamic(
+  () =>
+    import("./_components/AdminCollectionsTab").then(
+      (m) => m.AdminCollectionsTab
+    ),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
 type AdminTabId =
   | "rewards"
   | "redemptions"
   | "students"
   | "threads"
+  | "collections"
   | "replies"
   | "feedbacks"
   | "settings";
@@ -108,6 +118,11 @@ export function AdminDashboardClient({
       id: "threads",
       label: `Bài viết & Thưởng (${counts.threadsCount})`,
       icon: FileText,
+    },
+    {
+      id: "collections",
+      label: `Chuyên đề (${counts.collectionsCount})`,
+      icon: Layers,
     },
     {
       id: "replies",
@@ -233,6 +248,7 @@ export function AdminDashboardClient({
           onNotice={setNotice}
         />
       )}
+      {tab === "collections" && <AdminCollectionsTab onNotice={setNotice} />}
       {tab === "replies" && (
         <AdminRepliesAuditTab
           search={replySearch}

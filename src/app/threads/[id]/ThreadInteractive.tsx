@@ -6,14 +6,20 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Award,
+  Bookmark,
   CheckCircle2,
+  Clock,
+  Flame,
   FlaskConical,
   Gift,
+  Layers,
   Newspaper,
   Pencil,
   Pin,
   Trash2,
+  Zap,
 } from "lucide-react";
+import { toggleBookmarkAction } from "@/app/actions/collections";
 import { deleteOwnThreadAction } from "@/app/actions/forum";
 import { ThreadReplyComposer } from "@/app/threads/[id]/_components/ThreadReplyComposer";
 import { ThreadReplyList } from "@/app/threads/[id]/_components/ThreadReplyList";
@@ -25,10 +31,13 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAppSession } from "@/hooks/useAppSession";
 import { useThreadDiscussion } from "@/hooks/useThreadDiscussion";
-import { formatDateTimeVN } from "@/lib/format";
-import type { ThreadDetail, UserProfile } from "@/lib/types";
+import { formatDateTimeVN, formatRemainingTime } from "@/lib/format";
+import { isChallengeBlindActive } from "@/lib/rules";
+import type { ReplyItem, ThreadDetail, UserProfile } from "@/lib/types";
+import { cn } from "@/lib/utils";
 
 const ThreadAdminBar = dynamic(
   () =>
@@ -44,9 +53,7 @@ const ThreadEditForm = dynamic(
       (m) => m.ThreadEditForm
     ),
   {
-    loading: () => (
-      <div className="h-40 animate-pulse rounded-lg bg-muted/50" />
-    ),
+    loading: () => <Skeleton className="h-40 w-full rounded-lg" />,
   }
 );
 
@@ -62,6 +69,13 @@ export function ThreadInteractive({
   const [isEditingThread, setIsEditingThread] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingThread, setDeletingThread] = useState(false);
+  const [bookmarked, setBookmarked] = useState(thread.viewerBookmarked);
+  const [bookmarkBusy, setBookmarkBusy] = useState(false);
+  const [replyTarget, setReplyTarget] = useState<ReplyItem | null>(null);
+  const [quoteSnippet, setQuoteSnippet] = useState<{
+    text: string;
+    seq: number;
+  } | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     text: string;
@@ -88,16 +102,19 @@ export function ThreadInteractive({
     postReplyMutation,
     toggleUpvoteMutation,
     acceptReplyMutation,
+    awardChallengeMutation,
   } = useThreadDiscussion({
     threadId: thread.id,
     initialSnapshot: {
       status: thread.status,
       threadType: thread.threadType,
+      challengeEndsAt: thread.challengeEndsAt,
       acceptedReplyId: thread.acceptedReplyId,
       bountyPoints: thread.bountyPoints,
       authorRewardPoints: thread.authorRewardPoints,
       isPinned: thread.isPinned,
       replyCount: thread.replyCount,
+      hiddenRepliesCount: thread.hiddenRepliesCount,
       replies: thread.replies,
     },
     viewer,
@@ -107,6 +124,12 @@ export function ThreadInteractive({
   const isAdmin = viewer?.role === "admin";
   const isArticleThread =
     discussion.threadType === "news" || discussion.threadType === "research";
+  const isChallengeThread = discussion.threadType === "challenge";
+  const isBlindChallenge = isChallengeBlindActive(
+    discussion.threadType,
+    discussion.status,
+    discussion.challengeEndsAt
+  );
   const canEditThread =
     (isThreadOwner && discussion.status !== "closed") || isAdmin;
   const canDeleteOwnThread =
@@ -116,15 +139,51 @@ export function ThreadInteractive({
     discussion.acceptedReplyId === null;
   const canChooseAccepted =
     !isArticleThread &&
+    !isChallengeThread &&
     discussion.status === "open" &&
     discussion.acceptedReplyId === null &&
     (isThreadOwner || isAdmin);
+  const canAwardChallenge = isChallengeThread && isAdmin;
   const isThreadEdited = Boolean(
     thread.updatedAt &&
       new Date(thread.updatedAt).getTime() -
         new Date(thread.createdAt).getTime() >
         5000
   );
+
+  const handleToggleBookmark = useCallback(async () => {
+    if (!viewer) {
+      setFeedback({
+        type: "error",
+        text: "Vui lòng đăng nhập để lưu bài toán vào Sổ tay cá nhân.",
+      });
+      return;
+    }
+    if (bookmarkBusy) return;
+    const prev = bookmarked;
+    setBookmarked(!prev);
+    setBookmarkBusy(true);
+    try {
+      const res = await toggleBookmarkAction(thread.id);
+      if (!res.ok) {
+        setBookmarked(prev);
+        setFeedback({
+          type: "error",
+          text: res.error || "Không thể cập nhật sổ tay.",
+        });
+        return;
+      }
+      setBookmarked(Boolean(res.bookmarked));
+    } catch {
+      setBookmarked(prev);
+      setFeedback({
+        type: "error",
+        text: "Lỗi mạng khi cập nhật sổ tay.",
+      });
+    } finally {
+      setBookmarkBusy(false);
+    }
+  }, [viewer, bookmarkBusy, bookmarked, thread.id]);
 
   const handleAccept = useCallback(
     async (replyId: string) => {
@@ -147,6 +206,29 @@ export function ThreadInteractive({
       }
     },
     [acceptReplyMutation, refreshSession]
+  );
+
+  const handleAwardChallenge = useCallback(
+    async (replyId: string) => {
+      setFeedback(null);
+      try {
+        const res = await awardChallengeMutation.mutateAsync(replyId);
+        setFeedback({
+          type: "success",
+          text: res.message || "Đã chấm đúng và trao điểm Thử thách Tuần!",
+        });
+        await refreshSession();
+      } catch (err) {
+        setFeedback({
+          type: "error",
+          text:
+            err instanceof Error
+              ? err.message
+              : "Không thể chấm thưởng bài nộp thử thách.",
+        });
+      }
+    },
+    [awardChallengeMutation, refreshSession]
   );
 
   const handleUpvote = useCallback(
@@ -174,12 +256,31 @@ export function ThreadInteractive({
   );
 
   const handlePostReply = useCallback(
-    async (input: { content: string; imageUrls: string[] }) => {
+    async (input: {
+      content: string;
+      imageUrls: string[];
+      parentReplyId?: string | null;
+    }) => {
       setFeedback(null);
       await postReplyMutation.mutateAsync(input);
     },
     [postReplyMutation]
   );
+
+  const handleReplyTo = useCallback((reply: ReplyItem) => {
+    setReplyTarget(reply);
+  }, []);
+
+  const handleQuote = useCallback((reply: ReplyItem) => {
+    const excerpt = reply.content
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .slice(0, 3)
+      .map((line) => `> ${line}`)
+      .join("\n");
+    const quoted = `> **${reply.author.displayName}** viết:\n${excerpt}`;
+    setQuoteSnippet((prev) => ({ text: quoted, seq: (prev?.seq ?? 0) + 1 }));
+  }, []);
 
   async function handleDeleteOwnThread() {
     setDeletingThread(true);
@@ -220,15 +321,21 @@ export function ThreadInteractive({
   }, [invalidateDiscussion]);
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <Card className="p-5 sm:p-8">
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
               {discussion.isPinned && (
                 <Badge variant="destructive">
                   <Pin className="h-3 w-3" />
                   Đã ghim
+                </Badge>
+              )}
+              {isChallengeThread && (
+                <Badge variant="bounty">
+                  <Flame className="h-3 w-3 text-bounty" />
+                  Thử thách Tuần
                 </Badge>
               )}
               {discussion.threadType === "news" && (
@@ -254,8 +361,21 @@ export function ThreadInteractive({
                   Admin thưởng tác giả +{discussion.authorRewardPoints}đ
                 </Badge>
               )}
+              {isChallengeThread && discussion.challengeEndsAt && (
+                <Badge variant={isBlindChallenge ? "bounty" : "outline"}>
+                  <Clock className="h-3 w-3" />
+                  {isBlindChallenge
+                    ? formatRemainingTime(discussion.challengeEndsAt)
+                    : `Đã công bố (${formatDateTimeVN(discussion.challengeEndsAt)})`}
+                </Badge>
+              )}
               {discussion.status === "closed" ? (
                 <Badge variant="secondary">Chủ đề đã đóng</Badge>
+              ) : isChallengeThread ? (
+                <Badge variant="bounty">
+                  <Award className="h-3.5 w-3.5 text-bounty" />
+                  +{discussion.bountyPoints}đ / mỗi lời giải đúng
+                </Badge>
               ) : isArticleThread ? null : discussion.status === "solved" ? (
                 <Badge variant="successSolid">
                   <CheckCircle2 className="h-3.5 w-3.5" />
@@ -269,6 +389,24 @@ export function ThreadInteractive({
               )}
             </div>
           </div>
+
+          {thread.collections.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 text-xs">
+              <span className="inline-flex items-center gap-1 text-muted-foreground">
+                <Layers className="h-3.5 w-3.5" />
+                Thuộc chuyên đề:
+              </span>
+              {thread.collections.map((col) => (
+                <Link
+                  key={col.id}
+                  href={`/collections/${col.slug}`}
+                  className="rounded border border-primary/25 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+                >
+                  {col.title}
+                </Link>
+              ))}
+            </div>
+          )}
 
           {isEditingThread ? (
             <ThreadEditForm
@@ -324,10 +462,31 @@ export function ThreadInteractive({
                   </span>
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                   <span className="text-xs tabular-nums text-muted-foreground">
                     {thread.viewCount} lượt xem
                   </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={bookmarked ? "secondary" : "ghost"}
+                    disabled={bookmarkBusy}
+                    aria-pressed={bookmarked}
+                    onClick={() => void handleToggleBookmark()}
+                    className={cn(
+                      "h-7 px-2 text-xs",
+                      bookmarked
+                        ? "font-semibold text-primary"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    title={bookmarked ? "Bỏ khỏi Sổ tay" : "Lưu vào Sổ tay"}
+                  >
+                    <Bookmark
+                      aria-hidden="true"
+                      className={cn("size-3.5", bookmarked && "fill-current")}
+                    />
+                    {bookmarked ? "Đã lưu" : "Lưu sổ tay"}
+                  </Button>
                   {canEditThread && (
                     <Button
                       type="button"
@@ -376,6 +535,7 @@ export function ThreadInteractive({
           authorDisplayName={thread.author.displayName}
           status={discussion.status}
           threadType={discussion.threadType}
+          challengeEndsAt={discussion.challengeEndsAt}
           isPinned={discussion.isPinned}
           bountyPoints={discussion.bountyPoints}
           isArticleThread={isArticleThread}
@@ -384,32 +544,48 @@ export function ThreadInteractive({
         />
       )}
 
-      {liveToast && <Alert variant="info">⚡ {liveToast}</Alert>}
-      {feedback && (
-        <Alert variant={feedback.type === "success" ? "success" : "destructive"}>
-          {feedback.text}
-        </Alert>
-      )}
+      <div aria-live="polite" className="flex flex-col gap-3 empty:hidden">
+        {liveToast && (
+          <Alert variant="info" className="flex items-center gap-2">
+            <Zap className="size-4 shrink-0" aria-hidden="true" />
+            <span>{liveToast}</span>
+          </Alert>
+        )}
+        {feedback && (
+          <Alert variant={feedback.type === "success" ? "success" : "destructive"}>
+            {feedback.text}
+          </Alert>
+        )}
+      </div>
 
       <ThreadReplyList
         threadId={thread.id}
         replies={discussion.replies}
+        hiddenRepliesCount={discussion.hiddenRepliesCount}
+        challengeEndsAt={discussion.challengeEndsAt}
+        isBlindChallenge={isBlindChallenge}
         threadAuthorId={thread.author.id}
         viewerId={viewer?.id ?? null}
         isAdmin={isAdmin}
         bountyPoints={discussion.bountyPoints}
         status={discussion.status}
         isArticleThread={isArticleThread}
+        isChallengeThread={isChallengeThread}
         isThreadOwner={isThreadOwner}
         canChooseAccepted={canChooseAccepted}
+        canAwardChallenge={canAwardChallenge}
         realtimeState={realtimeState}
         onlineCount={onlineCount}
         isFetching={isFetching}
         isUpvoting={toggleUpvoteMutation.isPending}
         isAccepting={acceptReplyMutation.isPending}
+        isAwardingChallenge={awardChallengeMutation.isPending}
         onRefresh={handleRefresh}
         onUpvote={handleUpvote}
         onAccept={handleAccept}
+        onAwardChallenge={handleAwardChallenge}
+        onReplyTo={handleReplyTo}
+        onQuote={handleQuote}
         onFeedback={setFeedback}
       />
 
@@ -418,8 +594,13 @@ export function ThreadInteractive({
         status={discussion.status}
         viewer={viewer}
         isArticleThread={isArticleThread}
+        isChallengeThread={isChallengeThread}
+        isBlindChallenge={isBlindChallenge}
         bountyPoints={discussion.bountyPoints}
+        replyTarget={replyTarget}
+        quoteSnippet={quoteSnippet}
         isSubmitting={postReplyMutation.isPending}
+        onClearReplyTarget={() => setReplyTarget(null)}
         onSubmit={handlePostReply}
       />
 

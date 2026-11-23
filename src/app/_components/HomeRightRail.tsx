@@ -1,14 +1,73 @@
 import Link from "next/link";
-import type { RewardItem, UserProfile } from "@/lib/types";
+import { Clock, Flame } from "lucide-react";
+import { formatRemainingTime } from "@/lib/format";
+import { isChallengeBlindActive } from "@/lib/rules";
+import type { RewardItem, ThreadSummary, UserProfile } from "@/lib/types";
 
 interface HomeRightRailProps {
   activeLeaders: UserProfile[];
   rewards: RewardItem[];
+  challenges?: ThreadSummary[];
 }
 
-export function HomeRightRail({ activeLeaders, rewards }: HomeRightRailProps) {
+export function HomeRightRail({
+  activeLeaders,
+  rewards,
+  challenges = [],
+}: HomeRightRailProps) {
   return (
     <aside className="space-y-7 lg:border-l lg:border-border lg:pl-6">
+      {challenges.length > 0 && (
+        <div className="border-b border-border pb-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="section-label inline-flex items-center gap-1.5">
+              <Flame className="h-3.5 w-3.5 text-bounty" />
+              Thử thách Tuần
+            </h2>
+            <Link
+              href="/?type=challenge"
+              className="text-xs font-medium text-primary hover:underline"
+            >
+              Tất cả
+            </Link>
+          </div>
+          <ul className="divide-y divide-border/70">
+            {challenges.map((ch) => {
+              const blind = isChallengeBlindActive(
+                ch.threadType,
+                ch.status,
+                ch.challengeEndsAt
+              );
+              return (
+                <li key={ch.id}>
+                  <Link
+                    href={`/threads/${ch.id}`}
+                    prefetch={false}
+                    className="group block py-2.5 text-xs transition-colors"
+                  >
+                    <p className="line-clamp-2 font-medium leading-snug text-foreground group-hover:text-primary">
+                      {ch.title}
+                    </p>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[11px] tabular-nums">
+                      <span className="inline-flex items-center gap-1 text-muted-foreground">
+                        <Clock className="h-3 w-3" />
+                        {ch.challengeEndsAt
+                          ? blind
+                            ? formatRemainingTime(ch.challengeEndsAt)
+                            : "Đã công bố"
+                          : "Đang mở"}
+                      </span>
+                      <span className="font-semibold text-bounty">
+                        +{ch.bountyPoints}đ
+                      </span>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
       <div>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="section-label">Bảng vàng</h2>

@@ -28,6 +28,7 @@ export function NotificationBell() {
     },
     staleTime: 25_000,
     refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
   });
 
   const items = data?.items ?? [];

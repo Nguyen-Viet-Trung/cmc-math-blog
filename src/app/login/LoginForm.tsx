@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Eye, EyeOff, Loader2, LogIn, UserPlus } from "lucide-react";
+import { Eye, EyeOff, LogIn, UserPlus } from "lucide-react";
 import { registerStudentAction } from "@/app/actions/auth";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
+import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAppSession } from "@/hooks/useAppSession";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -167,128 +169,134 @@ export function LoginForm({
         </TabsList>
       </Tabs>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
-        {mode === "register" && (
-          <>
-            <div className="space-y-1.5">
-              <Label htmlFor="login-name">Họ và tên hiển thị</Label>
+      <form onSubmit={handleSubmit}>
+        <FieldGroup className="gap-4">
+          {mode === "register" && (
+            <>
+              <Field>
+                <FieldLabel htmlFor="login-name">Họ và tên hiển thị</FieldLabel>
+                <Input
+                  id="login-name"
+                  type="text"
+                  required
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder="Ví dụ: Nguyễn Minh Khôi"
+                />
+              </Field>
+
+              <Field>
+                <FieldLabel htmlFor="login-grade">Khối lớp hiện tại</FieldLabel>
+                <NativeSelect
+                  id="login-grade"
+                  value={gradeLevel}
+                  onChange={(e) => setGradeLevel(e.target.value)}
+                >
+                  {GRADE_OPTIONS.map((g) => (
+                    <option key={g} value={g}>
+                      {g}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+            </>
+          )}
+
+          <Field>
+            <FieldLabel htmlFor="login-email">Địa chỉ Email</FieldLabel>
+            <Input
+              id="login-email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="hocsinh@gmail.com"
+            />
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="login-password">
+              Mật khẩu (tối thiểu 6 ký tự)
+            </FieldLabel>
+            <div className="relative">
               <Input
-                id="login-name"
-                type="text"
+                id="login-password"
+                type={showPassword ? "text" : "password"}
                 required
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Ví dụ: Nguyễn Minh Khôi"
+                minLength={6}
+                autoComplete={
+                  mode === "login" ? "current-password" : "new-password"
+                }
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                className="pr-10"
               />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="login-grade">Khối lớp hiện tại</Label>
-              <select
-                id="login-grade"
-                value={gradeLevel}
-                onChange={(e) => setGradeLevel(e.target.value)}
-                className="flex h-9 w-full rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-foreground shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              <button
+                type="button"
+                onClick={() => setShowPassword((prev) => !prev)}
+                aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
-                {GRADE_OPTIONS.map((g) => (
-                  <option key={g} value={g}>
-                    {g}
-                  </option>
-                ))}
-              </select>
+                {showPassword ? (
+                  <EyeOff className="size-4" aria-hidden="true" />
+                ) : (
+                  <Eye className="size-4" aria-hidden="true" />
+                )}
+              </button>
             </div>
-          </>
-        )}
+            {mode === "login" && (
+              <FieldDescription>
+                Quên mật khẩu? Hãy liên hệ Ban Quản Trị CLB để được cấp lại mật
+                khẩu mới.
+              </FieldDescription>
+            )}
+          </Field>
 
-        <div className="space-y-1.5">
-          <Label htmlFor="login-email">Địa chỉ Email</Label>
-          <Input
-            id="login-email"
-            type="email"
-            required
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="hocsinh@gmail.com"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label htmlFor="login-password">Mật khẩu (tối thiểu 6 ký tự)</Label>
-          <div className="relative">
-            <Input
-              id="login-password"
-              type={showPassword ? "text" : "password"}
-              required
-              minLength={6}
-              autoComplete={
-                mode === "login" ? "current-password" : "new-password"
-              }
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              className="pr-10"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((prev) => !prev)}
-              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-              title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
-            >
-              {showPassword ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </button>
-          </div>
-          {mode === "login" && (
-            <p className="text-[11px] text-muted-foreground">
-              Quên mật khẩu? Hãy liên hệ Ban Quản Trị CLB để được cấp lại mật
-              khẩu mới.
-            </p>
+          {mode === "register" && (
+            <Field>
+              <FieldLabel htmlFor="login-confirm-password">
+                Nhập lại mật khẩu
+              </FieldLabel>
+              <Input
+                id="login-confirm-password"
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={6}
+                autoComplete="new-password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Nhập lại mật khẩu để xác nhận"
+              />
+            </Field>
           )}
-        </div>
 
-        {mode === "register" && (
-          <div className="space-y-1.5">
-            <Label htmlFor="login-confirm-password">Nhập lại mật khẩu</Label>
-            <Input
-              id="login-confirm-password"
-              type={showPassword ? "text" : "password"}
-              required
-              minLength={6}
-              autoComplete="new-password"
-              value={confirmPassword}
-              onChange={(e) => setConfirmPassword(e.target.value)}
-              placeholder="Nhập lại mật khẩu để xác nhận"
-            />
+          <div aria-live="polite" className="flex flex-col gap-2 empty:hidden">
+            {error && (
+              <Alert variant="destructive" className="text-xs font-medium">
+                {error}
+              </Alert>
+            )}
+            {info && (
+              <Alert variant="success" className="text-xs font-medium">
+                {info}
+              </Alert>
+            )}
           </div>
-        )}
 
-        {error && (
-          <Alert variant="destructive" className="text-xs font-medium">
-            {error}
-          </Alert>
-        )}
-
-        {info && (
-          <Alert variant="success" className="text-xs font-medium">
-            {info}
-          </Alert>
-        )}
-
-        <Button type="submit" disabled={loading} className="w-full" size="lg">
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : mode === "login" ? (
-            <LogIn className="h-4 w-4" />
-          ) : (
-            <UserPlus className="h-4 w-4" />
-          )}
-          {mode === "login" ? "Đăng nhập ngay" : "Hoàn tất đăng ký"}
-        </Button>
+          <Button type="submit" disabled={loading} className="w-full" size="lg">
+            {loading ? (
+              <Spinner />
+            ) : mode === "login" ? (
+              <LogIn className="size-4" aria-hidden="true" />
+            ) : (
+              <UserPlus className="size-4" aria-hidden="true" />
+            )}
+            {mode === "login" ? "Đăng nhập ngay" : "Hoàn tất đăng ký"}
+          </Button>
+        </FieldGroup>
       </form>
     </Card>
   );

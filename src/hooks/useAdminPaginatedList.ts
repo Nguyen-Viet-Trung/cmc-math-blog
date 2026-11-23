@@ -25,6 +25,7 @@ export function useAdminPaginatedList<T>(params: {
 }) {
   const isDefaultView =
     params.page === 1 &&
+    (!params.initialData || params.pageSize === params.initialData.pageSize) &&
     !params.query?.trim() &&
     (!params.status || params.status === "all") &&
     (!params.type || params.type === "all");

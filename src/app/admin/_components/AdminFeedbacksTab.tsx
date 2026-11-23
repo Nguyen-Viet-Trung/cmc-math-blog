@@ -45,6 +45,7 @@ export function AdminFeedbacksTab({
     "all"
   );
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FeedbackItem | null>(null);
@@ -53,7 +54,7 @@ export function AdminFeedbacksTab({
   const { data, isLoading, isFetching } = useAdminPaginatedList<FeedbackItem>({
     resource: "feedbacks",
     page,
-    pageSize: 10,
+    pageSize,
     query: debouncedSearch,
     status: statusFilter,
     onPageClamp: setPage,
@@ -277,6 +278,12 @@ export function AdminFeedbacksTab({
             itemLabel="góp ý"
             isLoading={isFetching}
             onPageChange={setPage}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 20, 30, 50]}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
           />
         </div>
       )}

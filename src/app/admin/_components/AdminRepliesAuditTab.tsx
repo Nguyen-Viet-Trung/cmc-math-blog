@@ -52,6 +52,7 @@ export function AdminRepliesAuditTab({
     reason: string;
   } | null>(null);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   const debouncedSearch = useDebouncedValue(search, 200);
 
@@ -126,8 +127,8 @@ export function AdminRepliesAuditTab({
   }, [replies, replyFilter, debouncedSearch, selectedPair, flagsByReplyId]);
 
   const paged = useMemo(
-    () => paginateSlice(filteredReplies, page, 10),
-    [filteredReplies, page]
+    () => paginateSlice(filteredReplies, page, pageSize),
+    [filteredReplies, page, pageSize]
   );
 
   useEffect(() => {
@@ -365,6 +366,12 @@ export function AdminRepliesAuditTab({
             itemLabel="bình luận"
             isLoading={repliesQuery.isFetching}
             onPageChange={setPage}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 20, 30, 50]}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
           />
         </div>
       )}

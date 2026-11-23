@@ -16,8 +16,18 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
 import { formatDateVN, formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
 import { getMemberSeoMeta, getPublicMemberProfile } from "@/lib/forum-service";
+import { normalizePagination } from "@/lib/pagination";
+
+function buildMemberUrl(memberId: string, page: number, pageSize: number): string {
+  const sp = new URLSearchParams();
+  if (page > 1) sp.set("page", String(page));
+  if (pageSize !== 10) sp.set("pageSize", String(pageSize));
+  const qs = sp.toString();
+  return qs ? `/members/${memberId}?${qs}` : `/members/${memberId}`;
+}
 
 export async function generateMetadata({
   params,
@@ -43,11 +53,11 @@ export default async function MemberProfilePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const page = Number(sp.page) || 1;
-  const member = await getPublicMemberProfile(id, page, 10);
+  const { page, pageSize } = normalizePagination(sp.page, sp.pageSize, 10, 50);
+  const member = await getPublicMemberProfile(id, page, pageSize);
   if (!member) {
     notFound();
   }
@@ -199,52 +209,67 @@ export default async function MemberProfilePage({
           </div>
         )}
 
-        {member.threadsTotalPages > 1 && (
+        {member.threadsCount > 0 && (
           <nav
             aria-label="Phân trang bài viết thành viên"
-            className="flex items-center justify-between gap-3 pt-1 text-xs"
+            className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs"
           >
-            <span className="tabular-nums text-muted-foreground">
-              Trang {member.threadsPage} / {member.threadsTotalPages} (
-              {member.threadsCount} bài)
-            </span>
-            <div className="flex items-center gap-2">
-              {member.threadsPage > 1 ? (
-                <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                  <Link
-                    href={
-                      member.threadsPage - 1 <= 1
-                        ? `/members/${member.id}`
-                        : `/members/${member.id}?page=${member.threadsPage - 1}`
-                    }
-                  >
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="tabular-nums text-muted-foreground">
+                Trang {member.threadsPage} / {member.threadsTotalPages} (
+                {member.threadsCount} bài)
+              </span>
+              <UrlPageSizeSelect
+                basePath={`/members/${member.id}`}
+                pageSize={pageSize}
+                defaultPageSize={10}
+                options={[5, 10, 20, 30]}
+                itemLabel="bài viết"
+              />
+            </div>
+            {member.threadsTotalPages > 1 && (
+              <div className="flex items-center gap-2">
+                {member.threadsPage > 1 ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                    <Link
+                      href={buildMemberUrl(
+                        member.id,
+                        member.threadsPage - 1,
+                        pageSize
+                      )}
+                    >
+                      <ChevronLeft className="h-3.5 w-3.5" />
+                      Trang trước
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled className="h-8 text-xs">
                     <ChevronLeft className="h-3.5 w-3.5" />
                     Trang trước
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                  Trang trước
-                </Button>
-              )}
+                  </Button>
+                )}
 
-              {member.threadsPage < member.threadsTotalPages ? (
-                <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                  <Link
-                    href={`/members/${member.id}?page=${member.threadsPage + 1}`}
-                  >
+                {member.threadsPage < member.threadsTotalPages ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                    <Link
+                      href={buildMemberUrl(
+                        member.id,
+                        member.threadsPage + 1,
+                        pageSize
+                      )}
+                    >
+                      Trang sau
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button variant="outline" size="sm" disabled className="h-8 text-xs">
                     Trang sau
                     <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                  Trang sau
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
+                  </Button>
+                )}
+              </div>
+            )}
           </nav>
         )}
       </section>

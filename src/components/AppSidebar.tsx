@@ -77,6 +77,7 @@ export function AppSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 title={collapsed ? item.label : undefined}
                 className={cn(
                   "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",
@@ -109,6 +110,9 @@ export function AppSidebar({
             <Link
               href="/admin"
               prefetch={false}
+              aria-current={
+                isNavRouteActive(effectivePath, "/admin") ? "page" : undefined
+              }
               title={collapsed ? "Admin Portal" : undefined}
               className={cn(
                 "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",

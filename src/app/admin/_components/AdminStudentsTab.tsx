@@ -39,6 +39,7 @@ export function AdminStudentsTab({
   const queryClient = useQueryClient();
   const [studentSearch, setStudentSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [pointTargetId, setPointTargetId] = useState<string | null>(null);
   const [pointDelta, setPointDelta] = useState("10");
   const [pointReason, setPointReason] = useState("");
@@ -63,7 +64,7 @@ export function AdminStudentsTab({
   const { data, isLoading, isFetching } = useAdminPaginatedList<UserProfile>({
     resource: "students",
     page,
-    pageSize: 15,
+    pageSize,
     query: debouncedSearch,
     onPageClamp: setPage,
   });
@@ -482,6 +483,12 @@ export function AdminStudentsTab({
         itemLabel="học sinh"
         isLoading={isFetching}
         onPageChange={setPage}
+        pageSize={pageSize}
+        pageSizeOptions={[10, 15, 30, 50]}
+        onPageSizeChange={(next) => {
+          setPageSize(next);
+          setPage(1);
+        }}
       />
 
       <ConfirmDialog

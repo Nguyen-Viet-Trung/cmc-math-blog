@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { RealtimeChannel } from "@supabase/supabase-js";
+import { awardChallengeReplyAction } from "@/app/actions/admin";
 import {
   acceptReplyAction,
   createReplyAction,
@@ -185,13 +186,18 @@ export function useThreadDiscussion({
     [viewer?.id, viewer?.displayName]
   );
 
-  // 1. Mutation gửi lời giải mới (kèm Optimistic UI 0ms!)
+  // 1. Mutation gửi lời giải mới (kèm Optimistic UI 0ms + hỗ trợ parentReplyId lồng 1 cấp!)
   const postReplyMutation = useMutation({
-    mutationFn: async (input: { content: string; imageUrls: string[] }) => {
+    mutationFn: async (input: {
+      content: string;
+      imageUrls: string[];
+      parentReplyId?: string | null;
+    }) => {
       const res = await createReplyAction({
         threadId,
         content: input.content,
         imageUrls: input.imageUrls,
+        parentReplyId: input.parentReplyId ?? null,
       });
       if (!res.ok) {
         throw new Error(res.error || "Không thể gửi lời giải.");
@@ -207,6 +213,7 @@ export function useThreadDiscussion({
         const optimisticReply: ReplyItem = {
           id: `optimistic-${Date.now()}`,
           threadId,
+          parentReplyId: input.parentReplyId ?? null,
           content:
             input.content.trim() ||
             "(Xem lời giải chi tiết trong hình ảnh đính kèm)",
@@ -332,6 +339,40 @@ export function useThreadDiscussion({
     },
   });
 
+  // 4. Mutation Admin chấm đúng & trao điểm Thử thách Tuần (nhiều người thắng cuộc)
+  const awardChallengeMutation = useMutation({
+    mutationFn: async (replyId: string) => {
+      const res = await awardChallengeReplyAction(threadId, replyId);
+      if (!res.ok) {
+        throw new Error(res.error || "Không thể chấm thưởng bài nộp thử thách.");
+      }
+      return res;
+    },
+    onMutate: async (replyId) => {
+      await queryClient.cancelQueries({ queryKey });
+      const previous =
+        queryClient.getQueryData<ThreadDiscussionSnapshot>(queryKey);
+
+      if (previous) {
+        queryClient.setQueryData<ThreadDiscussionSnapshot>(queryKey, {
+          ...previous,
+          replies: previous.replies.map((r) =>
+            r.id === replyId ? { ...r, isAccepted: true } : r
+          ),
+        });
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        queryClient.setQueryData(queryKey, ctx.previous);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey });
+    },
+  });
+
   return {
     discussion: discussionQuery.data,
     isFetching: discussionQuery.isFetching,
@@ -344,5 +385,6 @@ export function useThreadDiscussion({
     postReplyMutation,
     toggleUpvoteMutation,
     acceptReplyMutation,
+    awardChallengeMutation,
   };
 }

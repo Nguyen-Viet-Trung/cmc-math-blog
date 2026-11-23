@@ -1,4 +1,12 @@
-import { BookOpen, Bug, Gift, Trophy, type LucideIcon } from "lucide-react";
+import {
+  Bookmark,
+  BookOpen,
+  Bug,
+  Gift,
+  Layers,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react";
 
 export interface NavItemConfig {
   href: string;
@@ -8,6 +16,8 @@ export interface NavItemConfig {
 
 export const MAIN_NAV_ITEMS: NavItemConfig[] = [
   { href: "/", label: "Diễn đàn", icon: BookOpen },
+  { href: "/collections", label: "Chuyên đề", icon: Layers },
+  { href: "/bookmarks", label: "Sổ tay", icon: Bookmark },
   { href: "/rewards", label: "Đổi quà", icon: Gift },
   { href: "/leaderboard", label: "Bảng vàng", icon: Trophy },
   { href: "/feedback", label: "Góp ý & Báo lỗi", icon: Bug },
@@ -17,8 +27,10 @@ export const SIDEBAR_STORAGE_KEY = "cmc-sidebar-collapsed";
 
 export function getRoutePageTitle(pathname: string): string {
   if (pathname === "/") return "Diễn đàn";
-  if (pathname === "/threads/new") return "Đăng câu hỏi mới";
+  if (pathname === "/threads/new") return "Đăng bài viết mới";
   if (pathname.startsWith("/threads/")) return "Thảo luận bài toán";
+  if (pathname.startsWith("/collections")) return "Bộ sưu tập Chuyên đề";
+  if (pathname.startsWith("/bookmarks")) return "Sổ tay bài toán";
   if (pathname.startsWith("/rewards")) return "Đổi quà";
   if (pathname.startsWith("/leaderboard")) return "Bảng vàng";
   if (pathname.startsWith("/feedback")) return "Góp ý & Báo lỗi";

@@ -50,6 +50,7 @@ export function AdminRedemptionsTab({
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
   const [rejectTarget, setRejectTarget] = useState<RedemptionItem | null>(null);
@@ -58,7 +59,7 @@ export function AdminRedemptionsTab({
   const { data, isLoading, isFetching } = useAdminPaginatedList<RedemptionItem>({
     resource: "redemptions",
     page,
-    pageSize: 10,
+    pageSize,
     query: debouncedSearch,
     status: statusFilter,
     onPageClamp: setPage,
@@ -279,6 +280,12 @@ export function AdminRedemptionsTab({
             itemLabel="đơn đổi quà"
             isLoading={isFetching}
             onPageChange={setPage}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 20, 30, 50]}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
           />
         </div>
       )}

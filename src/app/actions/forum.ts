@@ -14,7 +14,10 @@ import { createNotification } from "@/lib/notifications";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { broadcastThreadEventFromServer } from "@/lib/realtime-broadcast";
 import {
+  extractMentionedNames,
+  isChallengeBlindActive,
   normalizeThreadType,
+  validateChallengeDeadline,
   validateReplyAuthorMutation,
   validateThreadAuthorMutation,
 } from "@/lib/rules";
@@ -26,6 +29,8 @@ export async function createThreadAction(input: {
   categoryId: number;
   gradeTag: string;
   threadType?: ThreadType;
+  challengeEndsAt?: string | null;
+  bountyPoints?: number;
   content: string;
   imageUrls: string[];
 }): Promise<{ ok: boolean; threadId?: string; error?: string }> {
@@ -70,12 +75,40 @@ export async function createThreadAction(input: {
     return { ok: false, error: "Mỗi bài đăng tối đa 6 hình ảnh." };
   }
 
+  const threadType = normalizeThreadType(input.threadType);
+  let challengeEndsAtIso: string | null = null;
+  if (threadType === "challenge") {
+    if (user.role !== "admin") {
+      return {
+        ok: false,
+        error: "Chỉ Quản trị viên mới có quyền tạo bài Thử thách Tuần.",
+      };
+    }
+    const deadlineCheck = validateChallengeDeadline(input.challengeEndsAt);
+    if (!deadlineCheck.ok) {
+      return { ok: false, error: deadlineCheck.error };
+    }
+    challengeEndsAtIso = deadlineCheck.iso;
+  }
+
   try {
     const settings = await getSiteSettings();
     const sql = getSql();
-    const threadType = normalizeThreadType(input.threadType);
-    const initialBounty =
-      threadType === "question" ? settings.defaultSolvedPoints : 0;
+    let initialBounty = 0;
+    if (threadType === "question") {
+      initialBounty = settings.defaultSolvedPoints;
+    } else if (threadType === "challenge") {
+      const requested = Math.floor(
+        Number(input.bountyPoints ?? Math.max(20, settings.defaultSolvedPoints * 2))
+      );
+      if (!Number.isFinite(requested) || requested < 1 || requested > 1000) {
+        return {
+          ok: false,
+          error: "Điểm thưởng Thử thách Tuần phải từ 1 đến 1000.",
+        };
+      }
+      initialBounty = requested;
+    }
 
     const rows = await sql`
       INSERT INTO public.threads (
@@ -86,6 +119,7 @@ export async function createThreadAction(input: {
         image_urls,
         grade_tag,
         thread_type,
+        challenge_ends_at,
         bounty_points
       )
       VALUES (
@@ -96,6 +130,7 @@ export async function createThreadAction(input: {
         ${sql.array(input.imageUrls)},
         ${input.gradeTag.trim() || "Chung"},
         ${threadType},
+        ${challengeEndsAtIso}::timestamptz,
         ${initialBounty}
       )
       RETURNING id
@@ -118,6 +153,7 @@ export async function createReplyAction(input: {
   threadId: string;
   content: string;
   imageUrls: string[];
+  parentReplyId?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   if (!isDatabaseConfigured()) {
     return {
@@ -161,7 +197,10 @@ export async function createReplyAction(input: {
     const threadMeta = await sql.begin(async (rawTx) => {
       const tx = rawTx as unknown as ReturnType<typeof getSql>;
       const threads = await tx`
-        SELECT status, author_id, title FROM public.threads WHERE id = ${input.threadId} FOR UPDATE
+        SELECT status, author_id, title, thread_type, challenge_ends_at
+        FROM public.threads
+        WHERE id = ${input.threadId}
+        FOR UPDATE
       `;
       if (threads.length === 0) {
         throw new Error("Không tìm thấy bài toán.");
@@ -170,11 +209,55 @@ export async function createReplyAction(input: {
         throw new Error("Chủ đề này đã đóng thảo luận.");
       }
 
+      const threadType = normalizeThreadType(threads[0].thread_type);
+      const challengeEndsAt = threads[0].challenge_ends_at
+        ? new Date(String(threads[0].challenge_ends_at)).toISOString()
+        : null;
+      const blindActive = isChallengeBlindActive(
+        threadType,
+        String(threads[0].status) as "open" | "solved" | "closed",
+        challengeEndsAt
+      );
+
+      let resolvedParentId: string | null = null;
+      let parentAuthorId: string | null = null;
+
+      if (input.parentReplyId && input.parentReplyId.trim()) {
+        const parentRows = await tx`
+          SELECT r.id, r.parent_reply_id, r.author_id, p.role AS author_role
+          FROM public.replies r
+          JOIN public.profiles p ON p.id = r.author_id
+          WHERE r.id = ${input.parentReplyId.trim()}
+            AND r.thread_id = ${input.threadId}
+          LIMIT 1
+        `;
+        if (parentRows.length === 0) {
+          throw new Error("Không tìm thấy bình luận gốc để trả lời.");
+        }
+        const pRow = parentRows[0];
+        if (
+          blindActive &&
+          user.role !== "admin" &&
+          String(threads[0].author_id) !== user.id &&
+          String(pRow.author_id) !== user.id &&
+          pRow.author_role !== "admin" &&
+          String(pRow.author_id) !== String(threads[0].author_id)
+        ) {
+          throw new Error("Không thể trả lời bài nộp đang ẩn trong thời gian thử thách.");
+        }
+        // Ép tối đa 1 cấp lồng để giao diện thảo luận luôn gọn gàng
+        resolvedParentId = pRow.parent_reply_id
+          ? String(pRow.parent_reply_id)
+          : String(pRow.id);
+        parentAuthorId = String(pRow.author_id);
+      }
+
       await tx`
-        INSERT INTO public.replies (thread_id, author_id, content, image_urls)
+        INSERT INTO public.replies (thread_id, author_id, parent_reply_id, content, image_urls)
         VALUES (
           ${input.threadId},
           ${user.id},
+          ${resolvedParentId}::uuid,
           ${content || "(Xem lời giải chi tiết trong hình ảnh đính kèm)"},
           ${sql.array(input.imageUrls)}
         )
@@ -189,25 +272,90 @@ export async function createReplyAction(input: {
       return {
         authorId: String(threads[0].author_id),
         title: String(threads[0].title),
+        parentAuthorId,
+        blindActive,
       };
     });
 
     after(async () => {
-      if (threadMeta.authorId !== user.id) {
-        await createNotification({
-          userId: threadMeta.authorId,
-          type: "new_reply",
-          title: `${user.displayName} vừa bình luận bài viết của bạn`,
-          body: threadMeta.title.slice(0, 120),
-          href: `/threads/${input.threadId}`,
-        });
+      const notified = new Set<string>([user.id]);
+      const tasks: Promise<unknown>[] = [];
+
+      if (threadMeta.authorId && !notified.has(threadMeta.authorId)) {
+        notified.add(threadMeta.authorId);
+        tasks.push(
+          createNotification({
+            userId: threadMeta.authorId,
+            type: "new_reply",
+            title: `${user.displayName} vừa bình luận bài viết của bạn`,
+            body: threadMeta.title.slice(0, 120),
+            href: `/threads/${input.threadId}`,
+          })
+        );
       }
-      await broadcastThreadEventFromServer({
-        threadId: input.threadId,
-        kind: "new_reply",
-        senderId: user.id,
-        senderName: user.displayName,
-      });
+
+      if (
+        threadMeta.parentAuthorId &&
+        !notified.has(threadMeta.parentAuthorId)
+      ) {
+        notified.add(threadMeta.parentAuthorId);
+        tasks.push(
+          createNotification({
+            userId: threadMeta.parentAuthorId,
+            type: "reply_mention",
+            title: `${user.displayName} vừa trả lời bình luận của bạn`,
+            body: threadMeta.title.slice(0, 120),
+            href: `/threads/${input.threadId}`,
+          })
+        );
+      }
+
+      // Gửi thông báo cho người được nhắc tên (@[Tên] hoặc @token) khi không ở chế độ ẩn bài thử thách
+      if (!threadMeta.blindActive) {
+        const mentionedNames = extractMentionedNames(content);
+        if (mentionedNames.length > 0) {
+          try {
+            const lowerNames = mentionedNames.map((n) => n.toLowerCase());
+            const matchedProfiles = await sql`
+              SELECT id FROM public.profiles
+              WHERE is_banned = FALSE
+                AND (
+                  LOWER(display_name) = ANY(${sql.array(lowerNames)})
+                  OR LOWER(nickname) = ANY(${sql.array(lowerNames)})
+                )
+              LIMIT 5
+            `;
+            for (const row of matchedProfiles) {
+              const targetId = String(row.id);
+              if (!notified.has(targetId)) {
+                notified.add(targetId);
+                tasks.push(
+                  createNotification({
+                    userId: targetId,
+                    type: "reply_mention",
+                    title: `${user.displayName} vừa nhắc tên bạn trong thảo luận`,
+                    body: threadMeta.title.slice(0, 120),
+                    href: `/threads/${input.threadId}`,
+                  })
+                );
+              }
+            }
+          } catch {
+            // best-effort mention notification
+          }
+        }
+      }
+
+      tasks.push(
+        broadcastThreadEventFromServer({
+          threadId: input.threadId,
+          kind: "new_reply",
+          senderId: user.id,
+          senderName: user.displayName,
+        })
+      );
+
+      await Promise.all(tasks);
     });
     revalidateTag(CACHE_TAGS.threads);
     revalidatePath("/");
@@ -618,7 +766,7 @@ export async function deleteOwnReplyAction(
       await tx`DELETE FROM public.replies WHERE id = ${replyId}`;
       await tx`
         UPDATE public.threads
-        SET reply_count = GREATEST(0, reply_count - 1)
+        SET reply_count = (SELECT COUNT(*)::int FROM public.replies WHERE thread_id = ${row.thread_id})
         WHERE id = ${row.thread_id}
       `;
       return {

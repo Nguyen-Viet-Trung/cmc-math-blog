@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Gift, Loader2, Lock, Pin, Trash2 } from "lucide-react";
+import { Clock, Gift, Loader2, Lock, Pin, Trash2 } from "lucide-react";
 import {
   awardThreadAuthorAction,
   moderateThreadAction,
@@ -11,6 +11,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Separator } from "@/components/ui/separator";
 import type { ThreadStatus, ThreadType } from "@/lib/types";
 
@@ -19,6 +20,7 @@ interface ThreadAdminBarProps {
   authorDisplayName: string;
   status: ThreadStatus;
   threadType: ThreadType;
+  challengeEndsAt: string | null;
   isPinned: boolean;
   bountyPoints: number;
   isArticleThread: boolean;
@@ -33,6 +35,7 @@ export function ThreadAdminBar({
   authorDisplayName,
   status,
   threadType,
+  challengeEndsAt,
   isPinned,
   bountyPoints,
   isArticleThread,
@@ -42,6 +45,13 @@ export function ThreadAdminBar({
   const router = useRouter();
   const [customBounty, setCustomBounty] = useState(String(bountyPoints));
   const [selectedType, setSelectedType] = useState<ThreadType>(threadType);
+  const [deadlineInput, setDeadlineInput] = useState(() => {
+    const base = challengeEndsAt
+      ? new Date(challengeEndsAt)
+      : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${base.getFullYear()}-${pad(base.getMonth() + 1)}-${pad(base.getDate())}T${pad(base.getHours())}:${pad(base.getMinutes())}`;
+  });
   const [authorAwardPoints, setAuthorAwardPoints] = useState("20");
   const [authorAwardReason, setAuthorAwardReason] = useState("");
   const [awardingAuthor, setAwardingAuthor] = useState(false);
@@ -57,8 +67,15 @@ export function ThreadAdminBar({
   }, [threadType]);
 
   async function handleAdminAction(
-    action: "toggle_pin" | "toggle_close" | "delete" | "set_bounty" | "set_type",
-    nextType?: ThreadType
+    action:
+      | "toggle_pin"
+      | "toggle_close"
+      | "delete"
+      | "set_bounty"
+      | "set_type"
+      | "set_challenge_deadline",
+    nextType?: ThreadType,
+    overrideDeadline?: string
   ) {
     setBusyAction(true);
     try {
@@ -67,6 +84,14 @@ export function ThreadAdminBar({
         action,
         bountyPoints: Number(customBounty),
         threadType: nextType ?? selectedType,
+        challengeEndsAt:
+          action === "set_challenge_deadline"
+            ? overrideDeadline === "end_now"
+              ? "end_now"
+              : deadlineInput
+                ? new Date(deadlineInput).toISOString()
+                : null
+            : undefined,
       });
       if (!res.ok) {
         onFeedback({ type: "error", text: res.error || "Thao tác thất bại." });
@@ -124,27 +149,30 @@ export function ThreadAdminBar({
 
   return (
     <>
-      <Card className="space-y-3 border-primary/25 bg-accent/50 p-4">
+      <Card className="flex flex-col gap-3 border-primary/25 bg-accent/50 p-4">
         <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-primary">
               Điều hành Admin:
             </span>
-            <select
-              aria-label="Phân loại bài viết"
-              value={selectedType}
-              disabled={busyAction}
-              onChange={(e) => {
-                const next = e.target.value as ThreadType;
-                setSelectedType(next);
-                void handleAdminAction("set_type", next);
-              }}
-              className="h-8 rounded-md border border-input bg-card px-2.5 text-xs font-medium text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-            >
-              <option value="question">Loại: Hỏi bài</option>
-              <option value="news">Loại: News</option>
-              <option value="research">Loại: Research</option>
-            </select>
+            <div className="w-44">
+              <NativeSelect
+                aria-label="Phân loại bài viết"
+                value={selectedType}
+                disabled={busyAction}
+                onChange={(e) => {
+                  const next = e.target.value as ThreadType;
+                  setSelectedType(next);
+                  void handleAdminAction("set_type", next);
+                }}
+                className="h-8 text-xs font-medium"
+              >
+                <option value="question">Loại: Hỏi bài</option>
+                <option value="challenge">Loại: Thử thách Tuần</option>
+                <option value="news">Loại: News</option>
+                <option value="research">Loại: Research</option>
+              </NativeSelect>
+            </div>
             <Button
               size="sm"
               variant="outline"
@@ -200,6 +228,49 @@ export function ThreadAdminBar({
         </div>
 
         <Separator />
+
+        {selectedType === "challenge" && (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1 text-xs font-semibold text-foreground">
+                <Clock className="h-3.5 w-3.5 text-bounty" />
+                Hạn ẩn bài thử thách:
+              </span>
+              <Input
+                type="datetime-local"
+                aria-label="Hạn kết thúc thử thách"
+                value={deadlineInput}
+                onChange={(e) => setDeadlineInput(e.target.value)}
+                className="h-8 w-52 bg-card text-xs"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={busyAction}
+                onClick={() => void handleAdminAction("set_challenge_deadline")}
+              >
+                Cập nhật hạn
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busyAction}
+                onClick={() =>
+                  void handleAdminAction(
+                    "set_challenge_deadline",
+                    undefined,
+                    "end_now"
+                  )
+                }
+              >
+                Mở công khai ngay
+              </Button>
+            </div>
+            <Separator />
+          </>
+        )}
 
         {/* Admin thưởng điểm tùy chỉnh trực tiếp cho người tạo bài viết */}
         <form

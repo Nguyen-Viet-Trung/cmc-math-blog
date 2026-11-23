@@ -1,18 +1,41 @@
 import Link from "next/link";
-import { CheckCircle2, ChevronLeft, ChevronRight } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
+import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
 import { getLeaderboardPaginated } from "@/lib/forum-service";
+import { normalizePagination } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
+
+function buildLeaderboardUrl(page: number, pageSize: number): string {
+  const sp = new URLSearchParams();
+  if (page > 1) sp.set("page", String(page));
+  if (pageSize !== 20) sp.set("pageSize", String(pageSize));
+  const qs = sp.toString();
+  return qs ? `/leaderboard?${qs}` : "/leaderboard";
+}
 
 export default async function LeaderboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; pageSize?: string }>;
 }) {
   const params = await searchParams;
-  const page = Number(params.page) || 1;
-  const paginated = await getLeaderboardPaginated(page, 20);
+  const { page, pageSize } = normalizePagination(
+    params.page,
+    params.pageSize,
+    20,
+    50
+  );
+  const paginated = await getLeaderboardPaginated(page, pageSize);
   const rankedLeaders = paginated.items;
   const rankOffset = (paginated.page - 1) * paginated.pageSize;
 
@@ -27,20 +50,25 @@ export default async function LeaderboardPage({
       </header>
 
       {rankedLeaders.length === 0 ? (
-        <div className="rounded-lg border border-border bg-card px-6 py-10 text-center">
-          <p className="text-sm font-semibold text-foreground">
-            Chưa có học sinh nào ghi điểm trên Bảng Vàng
-          </p>
-          <p className="mx-auto mt-1 max-w-md text-xs text-muted-foreground">
-            Khi lời giải của bạn được chọn làm lời giải đúng, điểm tích lũy và
-            thứ hạng sẽ tự động xuất hiện tại đây.
-          </p>
-          <div className="mt-4">
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <Trophy aria-hidden="true" />
+            </EmptyMedia>
+            <EmptyTitle>
+              Chưa có học sinh nào ghi điểm trên Bảng Vàng
+            </EmptyTitle>
+            <EmptyDescription>
+              Khi lời giải của bạn được chọn làm lời giải đúng, điểm tích lũy và
+              thứ hạng sẽ tự động xuất hiện tại đây.
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
             <Button asChild size="sm">
               <Link href="/">Xem các bài toán đang chờ lời giải</Link>
             </Button>
-          </div>
-        </div>
+          </EmptyContent>
+        </Empty>
       ) : (
         <div className="space-y-3">
           <Card className="overflow-hidden">
@@ -136,50 +164,65 @@ export default async function LeaderboardPage({
             </div>
           </Card>
 
-          {paginated.totalPages > 1 && (
+          {paginated.totalCount > 0 && (
             <nav
               aria-label="Phân trang Bảng vàng"
-              className="flex items-center justify-between gap-3 pt-1 text-xs"
+              className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs"
             >
-              <span className="tabular-nums text-muted-foreground">
-                Trang {paginated.page} / {paginated.totalPages} (
-                {paginated.totalCount} học sinh)
-              </span>
-              <div className="flex items-center gap-2">
-                {paginated.page > 1 ? (
-                  <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                    <Link
-                      href={
-                        paginated.page - 1 <= 1
-                          ? "/leaderboard"
-                          : `/leaderboard?page=${paginated.page - 1}`
-                      }
-                    >
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="tabular-nums text-muted-foreground">
+                  Trang {paginated.page} / {paginated.totalPages} (
+                  {paginated.totalCount} học sinh)
+                </span>
+                <UrlPageSizeSelect
+                  basePath="/leaderboard"
+                  pageSize={paginated.pageSize}
+                  defaultPageSize={20}
+                  options={[10, 20, 30, 50]}
+                  itemLabel="học sinh"
+                />
+              </div>
+              {paginated.totalPages > 1 && (
+                <div className="flex items-center gap-2">
+                  {paginated.page > 1 ? (
+                    <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                      <Link
+                        href={buildLeaderboardUrl(
+                          paginated.page - 1,
+                          paginated.pageSize
+                        )}
+                      >
+                        <ChevronLeft className="h-3.5 w-3.5" />
+                        Trang trước
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled className="h-8 text-xs">
                       <ChevronLeft className="h-3.5 w-3.5" />
                       Trang trước
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    Trang trước
-                  </Button>
-                )}
+                    </Button>
+                  )}
 
-                {paginated.page < paginated.totalPages ? (
-                  <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                    <Link href={`/leaderboard?page=${paginated.page + 1}`}>
+                  {paginated.page < paginated.totalPages ? (
+                    <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+                      <Link
+                        href={buildLeaderboardUrl(
+                          paginated.page + 1,
+                          paginated.pageSize
+                        )}
+                      >
+                        Trang sau
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" disabled className="h-8 text-xs">
                       Trang sau
                       <ChevronRight className="h-3.5 w-3.5" />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                    Trang sau
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-              </div>
+                    </Button>
+                  )}
+                </div>
+              )}
             </nav>
           )}
         </div>

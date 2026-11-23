@@ -5,4 +5,5 @@ export const CACHE_TAGS = {
   leaderboard: "leaderboard",
   rewards: "rewards",
   feedbacks: "feedbacks",
+  collections: "collections",
 } as const;

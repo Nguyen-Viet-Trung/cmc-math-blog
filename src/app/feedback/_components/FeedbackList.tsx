@@ -33,13 +33,14 @@ export function FeedbackList({
 }) {
   const [filterCat, setFilterCat] = useState<FeedbackCategory | "all">("all");
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(initialFeedbacks.pageSize);
 
   const query = useQuery<PaginatedResult<FeedbackItem>>({
-    queryKey: ["public-feedbacks", filterCat, page],
+    queryKey: ["public-feedbacks", filterCat, page, pageSize],
     queryFn: async () => {
       const sp = new URLSearchParams({
         page: String(page),
-        pageSize: String(initialFeedbacks.pageSize),
+        pageSize: String(pageSize),
         category: filterCat,
       });
       const res = await fetch(`/api/feedbacks?${sp.toString()}`, {
@@ -49,7 +50,11 @@ export function FeedbackList({
       return (await res.json()) as PaginatedResult<FeedbackItem>;
     },
     initialData:
-      filterCat === "all" && page === 1 ? initialFeedbacks : undefined,
+      filterCat === "all" &&
+        page === 1 &&
+        pageSize === initialFeedbacks.pageSize
+        ? initialFeedbacks
+        : undefined,
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
@@ -171,6 +176,12 @@ export function FeedbackList({
             itemLabel="mục"
             isLoading={query.isFetching}
             onPageChange={setPage}
+            pageSize={pageSize}
+            pageSizeOptions={[8, 12, 20, 30]}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
           />
         </div>
       )}

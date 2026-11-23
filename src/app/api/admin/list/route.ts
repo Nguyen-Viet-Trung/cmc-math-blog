@@ -6,6 +6,7 @@ import {
   listAdminStudentsPaginated,
   listAdminThreadsPaginated,
 } from "@/lib/admin-list-service";
+import { listCollectionsForAdmin } from "@/lib/collection-service";
 import {
   getCurrentUserProfile,
   listAllRepliesForAdmin,
@@ -33,7 +34,8 @@ export async function GET(request: Request) {
   const threadType: ThreadType | "all" =
     typeParam === "question" ||
     typeParam === "news" ||
-    typeParam === "research"
+    typeParam === "research" ||
+    typeParam === "challenge"
       ? typeParam
       : "all";
 
@@ -68,6 +70,11 @@ export async function GET(request: Request) {
     case "replies":
       return NextResponse.json(
         { replies: await listAllRepliesForAdmin(200) },
+        { headers }
+      );
+    case "collections":
+      return NextResponse.json(
+        { collections: await listCollectionsForAdmin() },
         { headers }
       );
     default:

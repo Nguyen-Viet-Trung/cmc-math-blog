@@ -37,6 +37,7 @@ export function AdminThreadsTab({
     "all"
   );
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(12);
   const [rewardInputs, setRewardInputs] = useState<Record<string, string>>({});
   const [rewardReasons, setRewardReasons] = useState<Record<string, string>>(
     {}
@@ -48,7 +49,7 @@ export function AdminThreadsTab({
     useAdminPaginatedList<AdminThreadManageItem>({
       resource: "threads",
       page,
-      pageSize: 12,
+      pageSize,
       query: debouncedSearch,
       type: threadTypeFilter,
       onPageClamp: setPage,
@@ -122,6 +123,7 @@ export function AdminThreadsTab({
             [
               { key: "all", label: "Tất cả" },
               { key: "question", label: "Hỏi bài" },
+              { key: "challenge", label: "Thử thách" },
               { key: "news", label: "News" },
               { key: "research", label: "Research" },
             ] as const
@@ -209,6 +211,7 @@ export function AdminThreadsTab({
                       className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground"
                     >
                       <option value="question">Hỏi bài</option>
+                      <option value="challenge">Thử thách</option>
                       <option value="news">News</option>
                       <option value="research">Research</option>
                     </select>
@@ -264,6 +267,12 @@ export function AdminThreadsTab({
             itemLabel="bài viết"
             isLoading={isFetching}
             onPageChange={setPage}
+            pageSize={pageSize}
+            pageSizeOptions={[10, 12, 25, 50]}
+            onPageSizeChange={(next) => {
+              setPageSize(next);
+              setPage(1);
+            }}
           />
         </div>
       )}

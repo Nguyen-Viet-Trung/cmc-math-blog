@@ -41,34 +41,46 @@ export function RewardHistoryPanels({
   initialPointHistory: PaginatedResult<PointTransactionItem>;
 }) {
   const [redemptionPage, setRedemptionPage] = useState(1);
+  const [redemptionPageSize, setRedemptionPageSize] = useState(
+    initialRedemptions.pageSize
+  );
   const [pointsPage, setPointsPage] = useState(1);
+  const [pointsPageSize, setPointsPageSize] = useState(
+    initialPointHistory.pageSize
+  );
 
   const redemptionsQuery = useQuery<PaginatedResult<RedemptionItem>>({
-    queryKey: ["my-redemptions", redemptionPage],
+    queryKey: ["my-redemptions", redemptionPage, redemptionPageSize],
     queryFn: async () => {
       const res = await fetch(
-        `/api/rewards/redemptions?page=${redemptionPage}&pageSize=${initialRedemptions.pageSize}`,
+        `/api/rewards/redemptions?page=${redemptionPage}&pageSize=${redemptionPageSize}`,
         { cache: "no-store" }
       );
       if (!res.ok) throw new Error("Không thể tải lịch sử đổi quà.");
       return (await res.json()) as PaginatedResult<RedemptionItem>;
     },
-    initialData: redemptionPage === 1 ? initialRedemptions : undefined,
+    initialData:
+      redemptionPage === 1 && redemptionPageSize === initialRedemptions.pageSize
+        ? initialRedemptions
+        : undefined,
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
 
   const pointsQuery = useQuery<PaginatedResult<PointTransactionItem>>({
-    queryKey: ["my-points-history", pointsPage],
+    queryKey: ["my-points-history", pointsPage, pointsPageSize],
     queryFn: async () => {
       const res = await fetch(
-        `/api/rewards/points?page=${pointsPage}&pageSize=${initialPointHistory.pageSize}`,
+        `/api/rewards/points?page=${pointsPage}&pageSize=${pointsPageSize}`,
         { cache: "no-store" }
       );
       if (!res.ok) throw new Error("Không thể tải lịch sử điểm.");
       return (await res.json()) as PaginatedResult<PointTransactionItem>;
     },
-    initialData: pointsPage === 1 ? initialPointHistory : undefined,
+    initialData:
+      pointsPage === 1 && pointsPageSize === initialPointHistory.pageSize
+        ? initialPointHistory
+        : undefined,
     placeholderData: keepPreviousData,
     staleTime: 15_000,
   });
@@ -166,6 +178,12 @@ export function RewardHistoryPanels({
           itemLabel="đơn"
           isLoading={redemptionsQuery.isFetching}
           onPageChange={setRedemptionPage}
+          pageSize={redemptionPageSize}
+          pageSizeOptions={[5, 8, 15, 25]}
+          onPageSizeChange={(next) => {
+            setRedemptionPageSize(next);
+            setRedemptionPage(1);
+          }}
         />
       </Card>
 
@@ -210,9 +228,8 @@ export function RewardHistoryPanels({
                     </p>
                   </div>
                   <span
-                    className={`shrink-0 font-extrabold tabular-nums ${
-                      tx.amount >= 0 ? "text-success" : "text-destructive"
-                    }`}
+                    className={`shrink-0 font-extrabold tabular-nums ${tx.amount >= 0 ? "text-success" : "text-destructive"
+                      }`}
                   >
                     {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}đ
                   </span>
@@ -229,6 +246,12 @@ export function RewardHistoryPanels({
           itemLabel="giao dịch"
           isLoading={pointsQuery.isFetching}
           onPageChange={setPointsPage}
+          pageSize={pointsPageSize}
+          pageSizeOptions={[10, 20, 30, 50]}
+          onPageSizeChange={(next) => {
+            setPointsPageSize(next);
+            setPointsPage(1);
+          }}
         />
       </Card>
     </div>

@@ -5,13 +5,18 @@ import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
-import { getCurrentUserProfile } from "@/lib/forum-service";
+import {
+  awardChallengeReplyTransaction,
+  getCurrentUserProfile,
+} from "@/lib/forum-service";
 import { createNotification } from "@/lib/notifications";
+import { broadcastThreadEventFromServer } from "@/lib/realtime-broadcast";
 import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   isValidThreadType,
   parseClubJoinedDate,
+  validateChallengeDeadline,
   validateRedemptionTransition,
   validateThreadAuthorReward,
   type RedemptionStatus,
@@ -444,9 +449,16 @@ export async function resetStudentPasswordAction(input: {
 
 export async function moderateThreadAction(input: {
   threadId: string;
-  action: "toggle_pin" | "toggle_close" | "delete" | "set_bounty" | "set_type";
+  action:
+    | "toggle_pin"
+    | "toggle_close"
+    | "delete"
+    | "set_bounty"
+    | "set_type"
+    | "set_challenge_deadline";
   bountyPoints?: number;
   threadType?: ThreadType;
+  challengeEndsAt?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
     await requireAdmin();
@@ -496,9 +508,37 @@ export async function moderateThreadAction(input: {
       if (!isValidThreadType(input.threadType)) {
         return { ok: false, error: "Loại bài viết không hợp lệ." };
       }
+      const nextDeadline =
+        input.threadType === "challenge"
+          ? input.challengeEndsAt ||
+            new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString()
+          : null;
       await sql`
-        UPDATE public.threads SET thread_type = ${input.threadType}, updated_at = NOW()
+        UPDATE public.threads
+        SET
+          thread_type = ${input.threadType},
+          challenge_ends_at = CASE
+            WHEN ${input.threadType} = 'challenge' THEN COALESCE(challenge_ends_at, ${nextDeadline}::timestamptz)
+            ELSE NULL
+          END,
+          updated_at = NOW()
         WHERE id = ${input.threadId}
+      `;
+    } else if (input.action === "set_challenge_deadline") {
+      let nextIso: string | null = null;
+      if (input.challengeEndsAt === "end_now") {
+        nextIso = new Date().toISOString();
+      } else if (input.challengeEndsAt) {
+        const parsed = validateChallengeDeadline(input.challengeEndsAt);
+        if (!parsed.ok) {
+          return { ok: false, error: parsed.error };
+        }
+        nextIso = parsed.iso;
+      }
+      await sql`
+        UPDATE public.threads
+        SET challenge_ends_at = ${nextIso}::timestamptz, updated_at = NOW()
+        WHERE id = ${input.threadId} AND thread_type = 'challenge'
       `;
     }
 
@@ -516,7 +556,63 @@ const THREAD_TYPE_LABELS: Record<ThreadType, string> = {
   question: "Hỏi bài",
   news: "News",
   research: "Research",
+  challenge: "Thử thách",
 };
+
+/**
+ * Admin chấm & trao thưởng lời giải đúng cho bài Thử thách Tuần (hỗ trợ nhiều người thắng cuộc).
+ */
+export async function awardChallengeReplyAction(
+  threadId: string,
+  replyId: string
+): Promise<{ ok: boolean; message?: string; error?: string }> {
+  try {
+    const admin = await requireAdmin();
+    const res = await awardChallengeReplyTransaction({
+      caller: admin,
+      threadId,
+      replyId,
+    });
+
+    after(async () => {
+      await Promise.all([
+        broadcastThreadEventFromServer({
+          threadId,
+          kind: "answer_accepted",
+          senderId: admin.id,
+          senderName: admin.displayName,
+        }),
+        createNotification({
+          userId: res.solverId,
+          type: "challenge_award",
+          title: `Chúc mừng! Bài nộp Thử thách Tuần đạt đúng (+${res.awardedPoints}đ)`,
+          body: res.threadTitle.slice(0, 120),
+          href: `/threads/${threadId}`,
+        }),
+      ]);
+    });
+
+    revalidateTag(CACHE_TAGS.threads);
+    revalidateTag(CACHE_TAGS.leaderboard);
+    revalidatePath(`/threads/${threadId}`);
+    revalidatePath("/");
+    revalidatePath("/leaderboard");
+    revalidatePath("/admin");
+
+    return {
+      ok: true,
+      message: `Đã chấm đúng & trao +${res.awardedPoints} điểm Thử thách Tuần cho ${res.solverName}!`,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Không thể chấm thưởng bài nộp thử thách.",
+    };
+  }
+}
 
 /**
  * Admin cộng điểm thưởng tùy chỉnh cho người tạo bài viết (đặc biệt hữu ích cho bài News, Research hoặc bài hỏi chất lượng).
@@ -679,7 +775,7 @@ export async function revokeAcceptedReplyAction(input: {
         FROM public.point_transactions
         WHERE reference_id = ${row.thread_id}
           AND user_id = ${row.author_id}
-          AND type = 'accepted_answer'
+          AND type IN ('accepted_answer', 'challenge_reward')
         ORDER BY created_at DESC
         LIMIT 1
       `;
@@ -804,7 +900,7 @@ export async function deleteReplyByAdminAction(input: {
           FROM public.point_transactions
           WHERE reference_id = ${row.thread_id}
             AND user_id = ${row.author_id}
-            AND type = 'accepted_answer'
+            AND type IN ('accepted_answer', 'challenge_reward')
           ORDER BY created_at DESC
           LIMIT 1
         `;
@@ -851,7 +947,7 @@ export async function deleteReplyByAdminAction(input: {
       await tx`
         UPDATE public.threads
         SET
-          reply_count = GREATEST(0, reply_count - 1),
+          reply_count = (SELECT COUNT(*)::int FROM public.replies WHERE thread_id = ${row.thread_id}),
           accepted_reply_id = CASE WHEN accepted_reply_id = ${row.id} THEN NULL ELSE accepted_reply_id END,
           status = CASE
             WHEN accepted_reply_id = ${row.id} AND status <> 'closed' THEN 'open'

@@ -64,16 +64,17 @@ describe("format utilities — định dạng thời gian, nhãn bài viết & U
         status: "open",
         q: "Cauchy",
         page: 3,
+        pageSize: 30,
       })
-    ).toBe("/?type=research&cat=dai-so&status=open&q=Cauchy&page=3");
-    expect(buildHomeFilterUrl({ page: 1 })).toBe("/");
+    ).toBe("/?type=research&cat=dai-so&status=open&q=Cauchy&page=3&pageSize=30");
+    expect(buildHomeFilterUrl({ page: 1, pageSize: 20 })).toBe("/");
   });
 });
 
 describe("navigation helpers — nhận diện route active & tiêu đề header", () => {
   it("ánh xạ tiêu đề header cho các tuyến đường chính", () => {
     expect(getRoutePageTitle("/")).toBe("Diễn đàn");
-    expect(getRoutePageTitle("/threads/new")).toBe("Đăng câu hỏi mới");
+    expect(getRoutePageTitle("/threads/new")).toBe("Đăng bài viết mới");
     expect(getRoutePageTitle("/threads/abc-123")).toBe("Thảo luận bài toán");
     expect(getRoutePageTitle("/admin")).toBe("Admin Portal");
   });

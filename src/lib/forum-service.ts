@@ -15,8 +15,11 @@ import {
   type PaginatedResult,
 } from "./pagination";
 import {
+  canViewReplyInChallenge,
+  isChallengeBlindActive,
   normalizeThreadType,
   validateAcceptAnswer,
+  validateChallengeAward,
   validateRewardRedemption,
 } from "./rules";
 import {
@@ -124,7 +127,7 @@ export const getCurrentUserProfile = cache(
         userEmail = typeof claims.email === "string" ? claims.email : null;
         userMeta =
           typeof claims.user_metadata === "object" &&
-          claims.user_metadata !== null
+            claims.user_metadata !== null
             ? (claims.user_metadata as Record<string, unknown>)
             : {};
       }
@@ -268,6 +271,7 @@ async function queryThreadsFromDb(
       COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
       t.grade_tag,
       t.thread_type,
+      t.challenge_ends_at,
       t.bounty_points,
       t.author_reward_points,
       t.status,
@@ -308,6 +312,9 @@ async function queryThreadsFromDb(
     imageCount: Number(r.image_count ?? 0),
     gradeTag: String(r.grade_tag ?? "Chung"),
     threadType: normalizeThreadType(r.thread_type),
+    challengeEndsAt: r.challenge_ends_at
+      ? new Date(String(r.challenge_ends_at)).toISOString()
+      : null,
     bountyPoints: Number(r.bounty_points ?? 10),
     authorRewardPoints: Number(r.author_reward_points ?? 0),
     status: (r.status as "open" | "solved" | "closed") ?? "open",
@@ -389,6 +396,7 @@ async function queryThreadsPaginatedFromDb(
       COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
       t.grade_tag,
       t.thread_type,
+      t.challenge_ends_at,
       t.bounty_points,
       t.author_reward_points,
       t.status,
@@ -461,6 +469,9 @@ async function queryThreadsPaginatedFromDb(
     imageCount: Number(r.image_count ?? 0),
     gradeTag: String(r.grade_tag ?? "Chung"),
     threadType: normalizeThreadType(r.thread_type),
+    challengeEndsAt: r.challenge_ends_at
+      ? new Date(String(r.challenge_ends_at)).toISOString()
+      : null,
     bountyPoints: Number(r.bounty_points ?? 10),
     authorRewardPoints: Number(r.author_reward_points ?? 0),
     status: (r.status as "open" | "solved" | "closed") ?? "open",
@@ -593,34 +604,34 @@ export const getPublicMemberProfile = cache(
   ): Promise<
     (PublicMemberProfile & { threadsPage: number; threadsTotalPages: number }) | null
   > => {
-  if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
-    return null;
-  }
+    if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
+      return null;
+    }
 
-  const { page, pageSize, offset } = normalizePagination(
-    pageRaw,
-    pageSizeRaw,
-    10
-  );
-  const sql = getSql();
-  const [profileRows, countRows, threadRows] = await Promise.all([
-    sql`
+    const { page, pageSize, offset } = normalizePagination(
+      pageRaw,
+      pageSizeRaw,
+      10
+    );
+    const sql = getSql();
+    const [profileRows, countRows, threadRows] = await Promise.all([
+      sql`
       SELECT id, display_name, nickname, avatar_url, bio, grade_level, role,
              total_earned_points, solved_count, joined_at, created_at
       FROM public.profiles
       WHERE id = ${memberId} AND is_banned = FALSE
       LIMIT 1
     `,
-    sql`
+      sql`
       SELECT
         (SELECT COUNT(*)::int FROM public.threads WHERE author_id = ${memberId}) AS threads_count,
         (SELECT COUNT(*)::int FROM public.replies WHERE author_id = ${memberId}) AS replies_count
     `,
-    sql`
+      sql`
       SELECT
         t.id, t.title, LEFT(t.content, 200) AS content_preview,
         COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
-        t.grade_tag, t.thread_type, t.bounty_points, t.author_reward_points,
+        t.grade_tag, t.thread_type, t.challenge_ends_at, t.bounty_points, t.author_reward_points,
         t.status, t.accepted_reply_id, t.is_pinned, t.view_count, t.reply_count, t.created_at,
         c.id AS category_id, c.slug AS category_slug, c.name AS category_name, c.color AS category_color
       FROM public.threads t
@@ -630,24 +641,24 @@ export const getPublicMemberProfile = cache(
       LIMIT ${pageSize}
       OFFSET ${offset}
     `,
-  ]);
+    ]);
 
-  if (profileRows.length === 0) return null;
-  const p = profileRows[0];
-  const createdAt = new Date(String(p.created_at)).toISOString();
-  const joinedAt = p.joined_at
-    ? new Date(String(p.joined_at)).toISOString()
-    : createdAt;
-  const threadsCount = Number(countRows[0]?.threads_count ?? 0);
-  const threadsTotalPages = Math.max(1, Math.ceil(threadsCount / pageSize));
-  const clampedPage = Math.min(page, threadsTotalPages);
-  let resolvedThreadRows = threadRows;
-  if (resolvedThreadRows.length === 0 && page > threadsTotalPages && threadsCount > 0) {
-    resolvedThreadRows = await sql`
+    if (profileRows.length === 0) return null;
+    const p = profileRows[0];
+    const createdAt = new Date(String(p.created_at)).toISOString();
+    const joinedAt = p.joined_at
+      ? new Date(String(p.joined_at)).toISOString()
+      : createdAt;
+    const threadsCount = Number(countRows[0]?.threads_count ?? 0);
+    const threadsTotalPages = Math.max(1, Math.ceil(threadsCount / pageSize));
+    const clampedPage = Math.min(page, threadsTotalPages);
+    let resolvedThreadRows = threadRows;
+    if (resolvedThreadRows.length === 0 && page > threadsTotalPages && threadsCount > 0) {
+      resolvedThreadRows = await sql`
       SELECT
         t.id, t.title, LEFT(t.content, 200) AS content_preview,
         COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
-        t.grade_tag, t.thread_type, t.bounty_points, t.author_reward_points,
+        t.grade_tag, t.thread_type, t.challenge_ends_at, t.bounty_points, t.author_reward_points,
         t.status, t.accepted_reply_id, t.is_pinned, t.view_count, t.reply_count, t.created_at,
         c.id AS category_id, c.slug AS category_slug, c.name AS category_name, c.color AS category_color
       FROM public.threads t
@@ -657,56 +668,59 @@ export const getPublicMemberProfile = cache(
       LIMIT ${pageSize}
       OFFSET ${(clampedPage - 1) * pageSize}
     `;
-  }
+    }
 
-  const authorSummary = {
-    id: String(p.id),
-    displayName: String(p.display_name),
-    nickname: String(p.nickname ?? ""),
-    avatarUrl: p.avatar_url ? String(p.avatar_url) : null,
-    gradeLevel: String(p.grade_level ?? "THPT"),
-    role: (p.role === "admin" ? "admin" : "student") as "admin" | "student",
-  };
+    const authorSummary = {
+      id: String(p.id),
+      displayName: String(p.display_name),
+      nickname: String(p.nickname ?? ""),
+      avatarUrl: p.avatar_url ? String(p.avatar_url) : null,
+      gradeLevel: String(p.grade_level ?? "THPT"),
+      role: (p.role === "admin" ? "admin" : "student") as "admin" | "student",
+    };
 
-  return {
-    id: authorSummary.id,
-    displayName: authorSummary.displayName,
-    nickname: authorSummary.nickname,
-    avatarUrl: authorSummary.avatarUrl,
-    bio: String(p.bio ?? ""),
-    gradeLevel: authorSummary.gradeLevel,
-    role: authorSummary.role,
-    totalEarnedPoints: Number(p.total_earned_points ?? 0),
-    solvedCount: Number(p.solved_count ?? 0),
-    joinedAt,
-    threadsCount,
-    repliesCount: Number(countRows[0]?.replies_count ?? 0),
-    threadsPage: clampedPage,
-    threadsTotalPages,
-    recentThreads: resolvedThreadRows.map((r) => ({
-      id: String(r.id),
-      title: String(r.title),
-      contentPreview: String(r.content_preview ?? ""),
-      imageCount: Number(r.image_count ?? 0),
-      gradeTag: String(r.grade_tag ?? "Chung"),
-      threadType: normalizeThreadType(r.thread_type),
-      bountyPoints: Number(r.bounty_points ?? 10),
-      authorRewardPoints: Number(r.author_reward_points ?? 0),
-      status: (r.status as "open" | "solved" | "closed") ?? "open",
-      acceptedReplyId: r.accepted_reply_id ? String(r.accepted_reply_id) : null,
-      isPinned: Boolean(r.is_pinned),
-      viewCount: Number(r.view_count ?? 0),
-      replyCount: Number(r.reply_count ?? 0),
-      createdAt: new Date(String(r.created_at)).toISOString(),
-      author: authorSummary,
-      category: {
-        id: Number(r.category_id),
-        slug: String(r.category_slug),
-        name: String(r.category_name),
-        color: String(r.category_color ?? "blue"),
-      },
-    })),
-  };
+    return {
+      id: authorSummary.id,
+      displayName: authorSummary.displayName,
+      nickname: authorSummary.nickname,
+      avatarUrl: authorSummary.avatarUrl,
+      bio: String(p.bio ?? ""),
+      gradeLevel: authorSummary.gradeLevel,
+      role: authorSummary.role,
+      totalEarnedPoints: Number(p.total_earned_points ?? 0),
+      solvedCount: Number(p.solved_count ?? 0),
+      joinedAt,
+      threadsCount,
+      repliesCount: Number(countRows[0]?.replies_count ?? 0),
+      threadsPage: clampedPage,
+      threadsTotalPages,
+      recentThreads: resolvedThreadRows.map((r) => ({
+        id: String(r.id),
+        title: String(r.title),
+        contentPreview: String(r.content_preview ?? ""),
+        imageCount: Number(r.image_count ?? 0),
+        gradeTag: String(r.grade_tag ?? "Chung"),
+        threadType: normalizeThreadType(r.thread_type),
+        challengeEndsAt: r.challenge_ends_at
+          ? new Date(String(r.challenge_ends_at)).toISOString()
+          : null,
+        bountyPoints: Number(r.bounty_points ?? 10),
+        authorRewardPoints: Number(r.author_reward_points ?? 0),
+        status: (r.status as "open" | "solved" | "closed") ?? "open",
+        acceptedReplyId: r.accepted_reply_id ? String(r.accepted_reply_id) : null,
+        isPinned: Boolean(r.is_pinned),
+        viewCount: Number(r.view_count ?? 0),
+        replyCount: Number(r.reply_count ?? 0),
+        createdAt: new Date(String(r.created_at)).toISOString(),
+        author: authorSummary,
+        category: {
+          id: Number(r.category_id),
+          slug: String(r.category_slug),
+          name: String(r.category_name),
+          color: String(r.category_color ?? "blue"),
+        },
+      })),
+    };
   }
 );
 
@@ -785,7 +799,7 @@ export async function getThreadDetail(
   }
 
   const sql = getSql();
-  const [threadRows, replyRows] = await Promise.all([
+  const [threadRows, replyRows, collectionRows] = await Promise.all([
     sql`
       SELECT
         t.*,
@@ -798,10 +812,17 @@ export async function getThreadDetail(
         c.id AS cat_id_ref,
         c.slug AS cat_slug,
         c.name AS cat_name,
-        c.color AS cat_color
+        c.color AS cat_color,
+        (tb.thread_id IS NOT NULL) AS viewer_bookmarked,
+        vp.role AS viewer_role
       FROM public.threads t
       JOIN public.profiles p ON p.id = t.author_id
       JOIN public.categories c ON c.id = t.category_id
+      LEFT JOIN public.thread_bookmarks tb
+        ON tb.thread_id = t.id
+       AND tb.user_id = ${viewerId ?? null}::uuid
+      LEFT JOIN public.profiles vp
+        ON vp.id = ${viewerId ?? null}::uuid
       WHERE t.id = ${threadId}
       LIMIT 1
     `,
@@ -814,26 +835,47 @@ export async function getThreadDetail(
         p.grade_level AS author_grade,
         p.role AS author_role,
         p.solved_count AS author_solved_count,
-        CASE
-          WHEN ${viewerId ?? null}::uuid IS NOT NULL AND EXISTS (
-            SELECT 1 FROM public.reply_upvotes u
-            WHERE u.reply_id = r.id AND u.user_id = ${viewerId ?? null}::uuid
-          ) THEN TRUE
-          ELSE FALSE
-        END AS viewer_has_upvoted
+        (u.reply_id IS NOT NULL) AS viewer_has_upvoted
       FROM public.replies r
       JOIN public.profiles p ON p.id = r.author_id
+      LEFT JOIN public.reply_upvotes u
+        ON u.reply_id = r.id
+       AND u.user_id = ${viewerId ?? null}::uuid
       WHERE r.thread_id = ${threadId}
       ORDER BY r.is_accepted DESC, r.created_at ASC
+    `,
+    sql`
+      SELECT col.id, col.slug, col.title
+      FROM public.collection_threads ct
+      JOIN public.collections col ON col.id = ct.collection_id
+      WHERE ct.thread_id = ${threadId} AND col.is_published = TRUE
+      ORDER BY col.title ASC
     `,
   ]);
 
   if (threadRows.length === 0) return null;
   const t = threadRows[0];
+  const threadType = normalizeThreadType(t.thread_type);
+  const status = (t.status as "open" | "solved" | "closed") ?? "open";
+  const challengeEndsAt = t.challenge_ends_at
+    ? new Date(String(t.challenge_ends_at)).toISOString()
+    : null;
+  const viewerRole: "student" | "admin" | null =
+    t.viewer_role === "admin"
+      ? "admin"
+      : t.viewer_role === "student"
+        ? "student"
+        : null;
+  const blindActive = isChallengeBlindActive(
+    threadType,
+    status,
+    challengeEndsAt
+  );
 
-  const replies: ReplyItem[] = replyRows.map((r) => ({
+  const allReplies: ReplyItem[] = replyRows.map((r) => ({
     id: String(r.id),
     threadId: String(r.thread_id),
+    parentReplyId: r.parent_reply_id ? String(r.parent_reply_id) : null,
     content: String(r.content),
     imageUrls: Array.isArray(r.image_urls)
       ? (r.image_urls as string[])
@@ -856,26 +898,46 @@ export async function getThreadDetail(
     },
   }));
 
+  const threadAuthorId = String(t.author_id_ref);
+  const replies = allReplies.filter((r) =>
+    canViewReplyInChallenge({
+      isBlindActive: blindActive,
+      viewerId: viewerId ?? null,
+      viewerRole,
+      threadAuthorId,
+      replyAuthorId: r.author.id,
+      replyAuthorRole: r.author.role,
+    })
+  );
+
   return {
     id: String(t.id),
     title: String(t.title),
     content: String(t.content),
     imageUrls: Array.isArray(t.image_urls) ? (t.image_urls as string[]) : [],
     gradeTag: String(t.grade_tag ?? "Chung"),
-    threadType: normalizeThreadType(t.thread_type),
+    threadType,
+    challengeEndsAt,
     bountyPoints: Number(t.bounty_points ?? 10),
     authorRewardPoints: Number(t.author_reward_points ?? 0),
-    status: (t.status as "open" | "solved" | "closed") ?? "open",
+    status,
     acceptedReplyId: t.accepted_reply_id ? String(t.accepted_reply_id) : null,
     isPinned: Boolean(t.is_pinned),
     viewCount: Number(t.view_count ?? 0),
     replyCount: Number(t.reply_count ?? 0),
+    hiddenRepliesCount: Math.max(0, allReplies.length - replies.length),
+    viewerBookmarked: Boolean(t.viewer_bookmarked),
+    collections: collectionRows.map((c) => ({
+      id: String(c.id),
+      slug: String(c.slug),
+      title: String(c.title),
+    })),
     createdAt: new Date(String(t.created_at)).toISOString(),
     updatedAt: t.updated_at
       ? new Date(String(t.updated_at)).toISOString()
       : undefined,
     author: {
-      id: String(t.author_id_ref),
+      id: threadAuthorId,
       displayName: String(t.author_name),
       nickname: String(t.author_nickname ?? ""),
       avatarUrl: t.author_avatar ? String(t.author_avatar) : null,
@@ -911,9 +973,21 @@ export async function getThreadDiscussionSnapshot(
   const sql = getSql();
   const [threadRows, replyRows] = await Promise.all([
     sql`
-      SELECT status, thread_type, accepted_reply_id, bounty_points, author_reward_points, is_pinned, reply_count
-      FROM public.threads
-      WHERE id = ${threadId}
+      SELECT
+        t.author_id,
+        t.status,
+        t.thread_type,
+        t.challenge_ends_at,
+        t.accepted_reply_id,
+        t.bounty_points,
+        t.author_reward_points,
+        t.is_pinned,
+        t.reply_count,
+        vp.role AS viewer_role
+      FROM public.threads t
+      LEFT JOIN public.profiles vp
+        ON vp.id = ${viewerId ?? null}::uuid
+      WHERE t.id = ${threadId}
       LIMIT 1
     `,
     sql`
@@ -925,15 +999,12 @@ export async function getThreadDiscussionSnapshot(
         p.grade_level AS author_grade,
         p.role AS author_role,
         p.solved_count AS author_solved_count,
-        CASE
-          WHEN ${viewerId ?? null}::uuid IS NOT NULL AND EXISTS (
-            SELECT 1 FROM public.reply_upvotes u
-            WHERE u.reply_id = r.id AND u.user_id = ${viewerId ?? null}::uuid
-          ) THEN TRUE
-          ELSE FALSE
-        END AS viewer_has_upvoted
+        (u.reply_id IS NOT NULL) AS viewer_has_upvoted
       FROM public.replies r
       JOIN public.profiles p ON p.id = r.author_id
+      LEFT JOIN public.reply_upvotes u
+        ON u.reply_id = r.id
+       AND u.user_id = ${viewerId ?? null}::uuid
       WHERE r.thread_id = ${threadId}
       ORDER BY r.is_accepted DESC, r.created_at ASC
     `,
@@ -941,10 +1012,27 @@ export async function getThreadDiscussionSnapshot(
 
   if (threadRows.length === 0) return null;
   const t = threadRows[0];
+  const threadType = normalizeThreadType(t.thread_type);
+  const status = (t.status as "open" | "solved" | "closed") ?? "open";
+  const challengeEndsAt = t.challenge_ends_at
+    ? new Date(String(t.challenge_ends_at)).toISOString()
+    : null;
+  const viewerRole: "student" | "admin" | null =
+    t.viewer_role === "admin"
+      ? "admin"
+      : t.viewer_role === "student"
+        ? "student"
+        : null;
+  const blindActive = isChallengeBlindActive(
+    threadType,
+    status,
+    challengeEndsAt
+  );
 
-  const replies: ReplyItem[] = replyRows.map((r) => ({
+  const allReplies: ReplyItem[] = replyRows.map((r) => ({
     id: String(r.id),
     threadId: String(r.thread_id),
+    parentReplyId: r.parent_reply_id ? String(r.parent_reply_id) : null,
     content: String(r.content),
     imageUrls: Array.isArray(r.image_urls) ? (r.image_urls as string[]) : [],
     isAccepted: Boolean(r.is_accepted),
@@ -965,14 +1053,28 @@ export async function getThreadDiscussionSnapshot(
     },
   }));
 
+  const threadAuthorId = String(t.author_id);
+  const replies = allReplies.filter((r) =>
+    canViewReplyInChallenge({
+      isBlindActive: blindActive,
+      viewerId: viewerId ?? null,
+      viewerRole,
+      threadAuthorId,
+      replyAuthorId: r.author.id,
+      replyAuthorRole: r.author.role,
+    })
+  );
+
   return {
-    status: (t.status as "open" | "solved" | "closed") ?? "open",
-    threadType: normalizeThreadType(t.thread_type),
+    status,
+    threadType,
+    challengeEndsAt,
     acceptedReplyId: t.accepted_reply_id ? String(t.accepted_reply_id) : null,
     bountyPoints: Number(t.bounty_points ?? 10),
     authorRewardPoints: Number(t.author_reward_points ?? 0),
     isPinned: Boolean(t.is_pinned),
-    replyCount: Number(t.reply_count ?? replies.length),
+    replyCount: Number(t.reply_count ?? allReplies.length),
+    hiddenRepliesCount: Math.max(0, allReplies.length - replies.length),
     replies,
   };
 }
@@ -1302,6 +1404,7 @@ export async function listAllThreadsForAdmin(
       t.id,
       t.title,
       t.thread_type,
+      t.challenge_ends_at,
       t.grade_tag,
       t.status,
       t.bounty_points,
@@ -1326,6 +1429,9 @@ export async function listAllThreadsForAdmin(
     id: String(r.id),
     title: String(r.title),
     threadType: normalizeThreadType(r.thread_type),
+    challengeEndsAt: r.challenge_ends_at
+      ? new Date(String(r.challenge_ends_at)).toISOString()
+      : null,
     gradeTag: String(r.grade_tag ?? "Chung"),
     categoryName: String(r.category_name),
     status: (r.status as "open" | "solved" | "closed") ?? "open",
@@ -1353,6 +1459,35 @@ export async function listAllRepliesForAdmin(
 
   const sql = getSql();
   const rows = await sql`
+    WITH latest_replies AS (
+      SELECT
+        r.id,
+        r.thread_id,
+        r.author_id,
+        r.content,
+        r.image_urls,
+        r.is_accepted,
+        r.upvotes_count,
+        r.created_at
+      FROM public.replies r
+      ORDER BY r.created_at DESC
+      LIMIT ${limit}
+    ),
+    accepted_tx AS (
+      SELECT DISTINCT ON (tx.reference_id, tx.user_id)
+        tx.reference_id,
+        tx.user_id,
+        tx.amount,
+        tx.created_by
+      FROM public.point_transactions tx
+      WHERE tx.type = 'accepted_answer'
+        AND tx.reference_id IN (
+          SELECT DISTINCT thread_id
+          FROM latest_replies
+          WHERE is_accepted = TRUE
+        )
+      ORDER BY tx.reference_id, tx.user_id, tx.created_at DESC
+    )
     SELECT
       r.id,
       r.thread_id,
@@ -1378,23 +1513,16 @@ export async function listAllRepliesForAdmin(
       COALESCE(pt.amount, CASE WHEN r.is_accepted THEN t.bounty_points ELSE 0 END) AS awarded_points,
       acc.display_name AS accepted_by_name,
       GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (r.created_at - t.created_at))))::int AS seconds_after_thread
-    FROM public.replies r
+    FROM latest_replies r
     JOIN public.threads t ON t.id = r.thread_id
     JOIN public.profiles ta ON ta.id = t.author_id
     JOIN public.profiles ra ON ra.id = r.author_id
-    LEFT JOIN LATERAL (
-      SELECT tx.amount, tx.created_by
-      FROM public.point_transactions tx
-      WHERE r.is_accepted = TRUE
-        AND tx.reference_id = t.id
-        AND tx.user_id = r.author_id
-        AND tx.type = 'accepted_answer'
-      ORDER BY tx.created_at DESC
-      LIMIT 1
-    ) pt ON TRUE
+    LEFT JOIN accepted_tx pt
+      ON r.is_accepted = TRUE
+     AND pt.reference_id = t.id
+     AND pt.user_id = r.author_id
     LEFT JOIN public.profiles acc ON acc.id = pt.created_by
     ORDER BY r.created_at DESC
-    LIMIT ${limit}
   `;
 
   return rows.map((r) => ({
@@ -1508,6 +1636,100 @@ export async function acceptReplyTransaction(params: {
     await tx`
       INSERT INTO public.point_transactions (user_id, amount, type, reason, reference_id, created_by)
       VALUES (${reply.author_id}, ${bounty}, 'accepted_answer', ${reason}, ${params.threadId}, ${params.caller.id})
+    `;
+
+    return {
+      awardedPoints: bounty,
+      solverId: String(reply.author_id),
+      solverName: String(reply.solver_name),
+      threadTitle: String(thread.title),
+    };
+  });
+}
+
+/**
+ * Luồng Admin chấm & trao điểm cho bài nộp đúng trong Thử thách Tuần
+ * (cho phép chọn nhiều học sinh giải đúng; mỗi học sinh nhận thưởng tối đa 1 lần / thử thách).
+ */
+export async function awardChallengeReplyTransaction(params: {
+  caller: UserProfile;
+  threadId: string;
+  replyId: string;
+}): Promise<{
+  awardedPoints: number;
+  solverId: string;
+  solverName: string;
+  threadTitle: string;
+}> {
+  const sql = getSql();
+
+  return await sql.begin(async (rawTx) => {
+    const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const threadRows = await tx`
+      SELECT * FROM public.threads
+      WHERE id = ${params.threadId}
+      FOR UPDATE
+    `;
+    if (threadRows.length === 0) {
+      throw new Error("Không tìm thấy bài Thử thách.");
+    }
+    const thread = threadRows[0];
+
+    const replyRows = await tx`
+      SELECT r.*, p.display_name AS solver_name, p.is_banned AS solver_banned
+      FROM public.replies r
+      JOIN public.profiles p ON p.id = r.author_id
+      WHERE r.id = ${params.replyId} AND r.thread_id = ${params.threadId}
+      FOR UPDATE OF r, p
+    `;
+    if (replyRows.length === 0) {
+      throw new Error("Không tìm thấy bài nộp này trong thử thách.");
+    }
+    const reply = replyRows[0];
+
+    const existingReward = await tx`
+      SELECT 1 FROM public.point_transactions
+      WHERE reference_id = ${params.threadId}
+        AND user_id = ${reply.author_id}
+        AND type = 'challenge_reward'
+      LIMIT 1
+    `;
+
+    const bounty = Number(thread.bounty_points ?? 20);
+    const check = validateChallengeAward({
+      callerRole: params.caller.role,
+      threadType: normalizeThreadType(thread.thread_type),
+      replyAuthorId: String(reply.author_id),
+      threadAuthorId: String(thread.author_id),
+      replyAuthorBanned: Boolean(reply.solver_banned),
+      alreadyAccepted: Boolean(reply.is_accepted),
+      alreadyRewardedUser: existingReward.length > 0,
+      bountyPoints: bounty,
+    });
+    if (!check.ok) {
+      throw new Error(check.error);
+    }
+
+    await tx`
+      UPDATE public.replies
+      SET is_accepted = TRUE, updated_at = NOW()
+      WHERE id = ${params.replyId}
+    `;
+
+    await tx`
+      UPDATE public.profiles
+      SET
+        points_balance = points_balance + ${bounty},
+        total_earned_points = total_earned_points + ${bounty},
+        solved_count = solved_count + 1,
+        updated_at = NOW()
+      WHERE id = ${reply.author_id}
+    `;
+
+    const reason = `Giải đúng Thử thách Tuần: "${String(thread.title).slice(0, 80)}"`;
+    await tx`
+      INSERT INTO public.point_transactions (user_id, amount, type, reason, reference_id, created_by)
+      VALUES (${reply.author_id}, ${bounty}, 'challenge_reward', ${reason}, ${params.threadId}, ${params.caller.id})
     `;
 
     return {

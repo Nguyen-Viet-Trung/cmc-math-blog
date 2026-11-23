@@ -53,6 +53,7 @@ export function AppMobileDrawer({
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 onClick={() => onOpenChange(false)}
                 className={cn(
                   "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors",

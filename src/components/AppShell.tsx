@@ -114,6 +114,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-primary focus:px-3 focus:py-2 focus:text-xs focus:font-semibold focus:text-primary-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+      >
+        Chuyển tới nội dung chính
+      </a>
       <AppSidebar
         siteName={siteName}
         collapsed={collapsed}
@@ -237,7 +243,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-[1220px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+        <main
+          id="main-content"
+          className="mx-auto w-full max-w-[1220px] flex-1 px-4 py-6 sm:px-6 lg:px-8"
+        >
           {children}
         </main>
 

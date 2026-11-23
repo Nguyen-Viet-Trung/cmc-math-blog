@@ -85,7 +85,7 @@ export function ThreadEditForm({
         onChange={setContent}
         imageUrls={imageUrls}
         onChangeImages={setImageUrls}
-        rows={6}
+        rows={12}
       />
 
       <div className="flex items-center justify-end gap-2">

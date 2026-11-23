@@ -50,10 +50,18 @@ const ALLOWED_FUNCTIONS = new Set([
   "ceil",
 ]);
 
+const MAX_EXPR_LENGTH = 250;
+const MAX_TOKEN_COUNT = 120;
+const MAX_PARSE_DEPTH = 24;
+const MAX_RANGE_ABS = 1_000_000;
+
 function tokenizeMathExpression(raw: string): Token[] {
   const tokens: Token[] = [];
   let i = 0;
   const s = raw.trim();
+  if (s.length > MAX_EXPR_LENGTH) {
+    throw new Error(`Biểu thức quá dài (tối đa ${MAX_EXPR_LENGTH} ký tự).`);
+  }
 
   while (i < s.length) {
     const ch = s[i];
@@ -129,6 +137,9 @@ function tokenizeMathExpression(raw: string): Token[] {
       }
     }
     expanded.push(cur);
+    if (expanded.length > MAX_TOKEN_COUNT) {
+      throw new Error(`Biểu thức quá phức tạp (tối đa ${MAX_TOKEN_COUNT} thành phần).`);
+    }
   }
 
   return expanded;
@@ -147,6 +158,19 @@ export function compileMathExpression(rawExpr: string): ExprNode {
   }
 
   let pos = 0;
+  let depth = 0;
+
+  function withDepth<T>(fn: () => T): T {
+    depth += 1;
+    if (depth > MAX_PARSE_DEPTH) {
+      throw new Error("Biểu thức lồng ngoặc quá sâu.");
+    }
+    try {
+      return fn();
+    } finally {
+      depth -= 1;
+    }
+  }
 
   function peek(): Token | undefined {
     return tokens[pos];
@@ -198,11 +222,11 @@ export function compileMathExpression(rawExpr: string): ExprNode {
     const t = peek();
     if (t?.type === "op" && t.value === "+") {
       consume();
-      return parseUnary();
+      return withDepth(parseUnary);
     }
     if (t?.type === "op" && t.value === "-") {
       consume();
-      const inner = parseUnary();
+      const inner = withDepth(parseUnary);
       return (x) => -inner(x);
     }
     return parsePower();
@@ -213,7 +237,7 @@ export function compileMathExpression(rawExpr: string): ExprNode {
     const t = peek();
     if (t?.type === "op" && t.value === "^") {
       consume();
-      const exponent = parseUnary(); // right-associative, allows x^-2
+      const exponent = withDepth(parseUnary); // right-associative, allows x^-2
       return (x) => Math.pow(base(x), exponent(x));
     }
     return base;
@@ -242,7 +266,7 @@ export function compileMathExpression(rawExpr: string): ExprNode {
           throw new Error(`Hàm "${t.value}" cần dấu ngoặc đơn, ví dụ ${t.value}(x).`);
         }
         consume();
-        const arg = parseAddSub();
+        const arg = withDepth(parseAddSub);
         if (peek()?.type !== "rparen") {
           throw new Error(`Thiếu dấu ngoặc đóng ")" cho hàm "${t.value}".`);
         }
@@ -281,7 +305,7 @@ export function compileMathExpression(rawExpr: string): ExprNode {
 
     if (t.type === "lparen") {
       consume();
-      const inner = parseAddSub();
+      const inner = withDepth(parseAddSub);
       if (peek()?.type !== "rparen") {
         throw new Error('Thiếu dấu ngoặc đóng ")".');
       }
@@ -305,6 +329,7 @@ function parseRange(raw: string): [number, number] | null {
   const a = Number(m[1]);
   const b = Number(m[2]);
   if (!Number.isFinite(a) || !Number.isFinite(b) || a >= b) return null;
+  if (Math.abs(a) > MAX_RANGE_ABS || Math.abs(b) > MAX_RANGE_ABS) return null;
   if (b - a > 10_000) return null;
   return [a, b];
 }

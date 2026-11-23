@@ -65,6 +65,7 @@ export interface AcceptAnswerInput {
   callerId: string;
   callerRole: "student" | "admin";
   threadAuthorId: string;
+  threadType?: ThreadType;
   threadStatus: "open" | "solved" | "closed";
   acceptedReplyId: string | null;
   replyAuthorId: string;
@@ -73,11 +74,20 @@ export interface AcceptAnswerInput {
 
 /**
  * Kiểm tra điều kiện chọn lời giải đúng và cộng điểm tự động:
- * 1. Chỉ chủ bài đăng (hoặc Admin) mới được chọn.
- * 2. Chặn tuyệt đối việc tự chọn câu trả lời của chính người đăng đề để cày điểm.
- * 3. Mỗi chủ đề chỉ trao thưởng cho 1 lời giải đúng duy nhất.
+ * 1. Chỉ áp dụng cho bài dạng Hỏi bài (`question`).
+ * 2. Chỉ chủ bài đăng (hoặc Admin) mới được chọn.
+ * 3. Chặn tuyệt đối việc tự chọn câu trả lời của chính người đăng đề để cày điểm.
+ * 4. Mỗi chủ đề chỉ trao thưởng cho 1 lời giải đúng duy nhất.
  */
 export function validateAcceptAnswer(input: AcceptAnswerInput): RuleResult {
+  if (input.threadType && input.threadType !== "question") {
+    return {
+      ok: false,
+      error: "Chỉ bài Hỏi bài mới hỗ trợ chọn lời giải đúng trực tiếp.",
+      statusCode: 400,
+    };
+  }
+
   const isOwner = input.callerId === input.threadAuthorId;
   const isAdmin = input.callerRole === "admin";
 
@@ -603,6 +613,63 @@ export function canViewReplyInChallenge(input: {
     return true;
   }
   return false;
+}
+
+/**
+ * Lọc danh sách bình luận được phép hiển thị trong Chế độ Thi Ẩn Bài (Blind Submission):
+ * - Áp dụng `canViewReplyInChallenge` cho từng bình luận.
+ * - Khi `isBlindActive` bật, mọi bình luận con (`parentReplyId`) có cha đang bị ẩn
+ *   (ví dụ Admin góp ý riêng vào bài nộp ẩn của Học sinh A) cũng bị ẩn với người xem khác
+ *   để tránh lộ nội dung hoặc bị đẩy thành bình luận gốc công khai.
+ */
+export function filterVisibleChallengeReplies<
+  T extends {
+    id: string;
+    parentReplyId: string | null;
+    author: { id: string; role: "student" | "admin" };
+  },
+>(
+  allReplies: readonly T[],
+  ctx: {
+    isBlindActive: boolean;
+    viewerId: string | null;
+    viewerRole: "student" | "admin" | null;
+    threadAuthorId: string;
+  }
+): T[] {
+  if (!ctx.isBlindActive) return [...allReplies];
+  if (
+    ctx.viewerRole === "admin" ||
+    (ctx.viewerId && ctx.viewerId === ctx.threadAuthorId)
+  ) {
+    return [...allReplies];
+  }
+
+  const byId = new Map<string, T>();
+  for (const r of allReplies) {
+    byId.set(r.id, r);
+  }
+
+  const canSeeOwn = (r: T) =>
+    canViewReplyInChallenge({
+      isBlindActive: true,
+      viewerId: ctx.viewerId,
+      viewerRole: ctx.viewerRole,
+      threadAuthorId: ctx.threadAuthorId,
+      replyAuthorId: r.author.id,
+      replyAuthorRole: r.author.role,
+    });
+
+  return allReplies.filter((r) => {
+    if (!canSeeOwn(r)) return false;
+    if (r.parentReplyId) {
+      const parent = byId.get(r.parentReplyId);
+      if (parent && !canSeeOwn(parent)) {
+        return false;
+      }
+    }
+    return true;
+  });
 }
 
 /**

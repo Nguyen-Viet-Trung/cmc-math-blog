@@ -63,6 +63,18 @@ export async function POST(request: Request) {
       );
     }
 
+    if (file.size <= 0 || file.size > MAX_BACKEND_IMAGE_BYTES) {
+      return NextResponse.json(
+        {
+          error:
+            file.size <= 0
+              ? "Tập tin ảnh rỗng."
+              : "Kích thước ảnh vượt quá giới hạn 1MB của máy chủ.",
+        },
+        { status: 400 }
+      );
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
     const headerBytes = new Uint8Array(buffer.subarray(0, 16));
@@ -85,15 +97,25 @@ export async function POST(request: Request) {
     const supabaseAdmin = createSupabaseAdminClient();
 
     if (!bucketVerified) {
-      const { data: buckets } = await supabaseAdmin.storage.listBuckets();
-      if (!buckets?.some((b) => b.name === STORAGE_BUCKET)) {
-        await supabaseAdmin.storage.createBucket(STORAGE_BUCKET, {
-          public: true,
-          fileSizeLimit: MAX_BACKEND_IMAGE_BYTES,
-          allowedMimeTypes: ["image/webp", "image/jpeg", "image/png"],
-        });
+      const { data: buckets, error: listErr } =
+        await supabaseAdmin.storage.listBuckets();
+      if (!listErr) {
+        if (!buckets?.some((b) => b.name === STORAGE_BUCKET)) {
+          const { error: createErr } = await supabaseAdmin.storage.createBucket(
+            STORAGE_BUCKET,
+            {
+              public: true,
+              fileSizeLimit: MAX_BACKEND_IMAGE_BYTES,
+              allowedMimeTypes: ["image/webp", "image/jpeg", "image/png"],
+            }
+          );
+          if (!createErr) {
+            bucketVerified = true;
+          }
+        } else {
+          bucketVerified = true;
+        }
       }
-      bucketVerified = true;
     }
 
     const ext =

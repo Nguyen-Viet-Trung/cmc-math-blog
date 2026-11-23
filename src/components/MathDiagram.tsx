@@ -65,42 +65,55 @@ function SvgFunctionPlot({ source }: { source: string }) {
     const yClampMin = spec.yMin - ySpan * 2;
     const yClampMax = spec.yMax + ySpan * 2;
 
-    const paths = spec.curves.map((curve) => {
-      const fn = compileMathExpression(curve.expr);
-      const parts: string[] = [];
-      let prevValid = false;
-      let prevY = 0;
+    try {
+      const paths = spec.curves.map((curve) => {
+        const fn = compileMathExpression(curve.expr);
+        const parts: string[] = [];
+        let prevValid = false;
+        let prevY = 0;
 
-      for (let i = 0; i <= samples; i++) {
-        const x = spec.xMin + (xSpan * i) / samples;
-        const y = fn(x);
-        const valid =
-          Number.isFinite(y) && y >= yClampMin && y <= yClampMax;
+        for (let i = 0; i <= samples; i++) {
+          const x = spec.xMin + (xSpan * i) / samples;
+          const y = fn(x);
+          const valid =
+            Number.isFinite(y) && y >= yClampMin && y <= yClampMax;
 
-        if (!valid) {
-          prevValid = false;
-          continue;
+          if (!valid) {
+            prevValid = false;
+            continue;
+          }
+
+          const sx = toSvgX(x);
+          const sy = toSvgY(y);
+          if (!prevValid || Math.abs(y - prevY) > jumpThreshold) {
+            parts.push(`M ${sx.toFixed(2)} ${sy.toFixed(2)}`);
+          } else {
+            parts.push(`L ${sx.toFixed(2)} ${sy.toFixed(2)}`);
+          }
+          prevValid = true;
+          prevY = y;
         }
 
-        const sx = toSvgX(x);
-        const sy = toSvgY(y);
-        if (!prevValid || Math.abs(y - prevY) > jumpThreshold) {
-          parts.push(`M ${sx.toFixed(2)} ${sy.toFixed(2)}`);
-        } else {
-          parts.push(`L ${sx.toFixed(2)} ${sy.toFixed(2)}`);
-        }
-        prevValid = true;
-        prevY = y;
-      }
+        return {
+          label: curve.label,
+          d: parts.join(" "),
+          color: CURVE_COLORS[curve.colorIndex % CURVE_COLORS.length],
+        };
+      });
 
+      return { spec, paths };
+    } catch (err) {
       return {
-        label: curve.label,
-        d: parts.join(" "),
-        color: CURVE_COLORS[curve.colorIndex % CURVE_COLORS.length],
+        spec: {
+          ...spec,
+          error:
+            err instanceof Error
+              ? err.message
+              : "Không thể tính giá trị biểu thức đồ thị.",
+        },
+        paths: [] as { label: string; d: string; color: string }[],
       };
-    });
-
-    return { spec, paths };
+    }
   }, [source]);
 
   const { spec, paths } = computed;
@@ -130,7 +143,7 @@ function SvgFunctionPlot({ source }: { source: string }) {
   const xTicks: number[] = [];
   for (
     let t = Math.ceil(spec.xMin / xStep) * xStep;
-    t <= spec.xMax + 1e-9;
+    t <= spec.xMax + 1e-9 && xTicks.length < 50 && t + xStep > t;
     t += xStep
   ) {
     xTicks.push(Number(t.toFixed(6)));
@@ -139,7 +152,7 @@ function SvgFunctionPlot({ source }: { source: string }) {
   const yTicks: number[] = [];
   for (
     let t = Math.ceil(spec.yMin / yStep) * yStep;
-    t <= spec.yMax + 1e-9;
+    t <= spec.yMax + 1e-9 && yTicks.length < 50 && t + yStep > t;
     t += yStep
   ) {
     yTicks.push(Number(t.toFixed(6)));

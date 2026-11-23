@@ -15,7 +15,7 @@ import {
   type PaginatedResult,
 } from "./pagination";
 import {
-  canViewReplyInChallenge,
+  filterVisibleChallengeReplies,
   isChallengeBlindActive,
   normalizeThreadType,
   validateAcceptAnswer,
@@ -28,7 +28,6 @@ import {
 } from "./supabase/server";
 import type {
   AdminReplyAuditItem,
-  AdminThreadManageItem,
   Category,
   PaginatedThreadsResult,
   PointTransactionItem,
@@ -254,123 +253,6 @@ export interface ListThreadsFilter {
   status?: "open" | "solved" | "all";
   threadType?: ThreadType | "all";
   query?: string;
-}
-
-async function queryThreadsFromDb(
-  catSlug: string | null,
-  statusFilter: string | null,
-  typeFilter: string | null,
-  searchPattern: string | null
-): Promise<ThreadSummary[]> {
-  const sql = getSql();
-  const rows = await sql`
-    SELECT
-      t.id,
-      t.title,
-      LEFT(t.content, 200) AS content_preview,
-      COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
-      t.grade_tag,
-      t.thread_type,
-      t.challenge_ends_at,
-      t.bounty_points,
-      t.author_reward_points,
-      t.status,
-      t.accepted_reply_id,
-      t.is_pinned,
-      t.view_count,
-      t.reply_count,
-      t.created_at,
-      p.id AS author_id,
-      p.display_name AS author_name,
-      p.nickname AS author_nickname,
-      p.avatar_url AS author_avatar,
-      p.grade_level AS author_grade,
-      p.role AS author_role,
-      c.id AS category_id,
-      c.slug AS category_slug,
-      c.name AS category_name,
-      c.color AS category_color
-    FROM public.threads t
-    JOIN public.profiles p ON p.id = t.author_id
-    JOIN public.categories c ON c.id = t.category_id
-    WHERE (${catSlug}::text IS NULL OR c.slug = ${catSlug})
-      AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
-      AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
-      AND (
-        ${searchPattern}::text IS NULL
-        OR t.title ILIKE ${searchPattern}
-        OR t.content ILIKE ${searchPattern}
-      )
-    ORDER BY t.is_pinned DESC, t.created_at DESC
-    LIMIT 60
-  `;
-
-  return rows.map((r) => ({
-    id: String(r.id),
-    title: String(r.title),
-    contentPreview: String(r.content_preview ?? ""),
-    imageCount: Number(r.image_count ?? 0),
-    gradeTag: String(r.grade_tag ?? "Chung"),
-    threadType: normalizeThreadType(r.thread_type),
-    challengeEndsAt: r.challenge_ends_at
-      ? new Date(String(r.challenge_ends_at)).toISOString()
-      : null,
-    bountyPoints: Number(r.bounty_points ?? 10),
-    authorRewardPoints: Number(r.author_reward_points ?? 0),
-    status: (r.status as "open" | "solved" | "closed") ?? "open",
-    acceptedReplyId: r.accepted_reply_id ? String(r.accepted_reply_id) : null,
-    isPinned: Boolean(r.is_pinned),
-    viewCount: Number(r.view_count ?? 0),
-    replyCount: Number(r.reply_count ?? 0),
-    createdAt: new Date(String(r.created_at)).toISOString(),
-    author: {
-      id: String(r.author_id),
-      displayName: String(r.author_name),
-      nickname: String(r.author_nickname ?? ""),
-      avatarUrl: r.author_avatar ? String(r.author_avatar) : null,
-      gradeLevel: String(r.author_grade ?? "THPT"),
-      role: r.author_role === "admin" ? "admin" : "student",
-    },
-    category: {
-      id: Number(r.category_id),
-      slug: String(r.category_slug),
-      name: String(r.category_name),
-      color: String(r.category_color ?? "blue"),
-    },
-  }));
-}
-
-const getCachedThreads = unstable_cache(
-  async (
-    catSlug: string | null,
-    statusFilter: string | null,
-    typeFilter: string | null
-  ) => queryThreadsFromDb(catSlug, statusFilter, typeFilter, null),
-  ["forum-threads-list"],
-  { revalidate: 30, tags: [CACHE_TAGS.threads] }
-);
-
-export async function listThreads(
-  filter: ListThreadsFilter = {}
-): Promise<ThreadSummary[]> {
-  if (!isDatabaseConfigured()) {
-    return [];
-  }
-
-  const searchPattern = filter.query?.trim()
-    ? `%${filter.query.trim()}%`
-    : null;
-  const catSlug = filter.categorySlug?.trim() || null;
-  const statusFilter =
-    filter.status && filter.status !== "all" ? filter.status : null;
-  const typeFilter =
-    filter.threadType && filter.threadType !== "all" ? filter.threadType : null;
-
-  if (!searchPattern) {
-    return getCachedThreads(catSlug, statusFilter, typeFilter);
-  }
-
-  return queryThreadsFromDb(catSlug, statusFilter, typeFilter, searchPattern);
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -915,16 +797,12 @@ export async function getThreadDetail(
   }));
 
   const threadAuthorId = String(t.author_id_ref);
-  const replies = allReplies.filter((r) =>
-    canViewReplyInChallenge({
-      isBlindActive: blindActive,
-      viewerId: viewerId ?? null,
-      viewerRole,
-      threadAuthorId,
-      replyAuthorId: r.author.id,
-      replyAuthorRole: r.author.role,
-    })
-  );
+  const replies = filterVisibleChallengeReplies(allReplies, {
+    isBlindActive: blindActive,
+    viewerId: viewerId ?? null,
+    viewerRole,
+    threadAuthorId,
+  });
 
   return {
     id: String(t.id),
@@ -1070,16 +948,12 @@ export async function getThreadDiscussionSnapshot(
   }));
 
   const threadAuthorId = String(t.author_id);
-  const replies = allReplies.filter((r) =>
-    canViewReplyInChallenge({
-      isBlindActive: blindActive,
-      viewerId: viewerId ?? null,
-      viewerRole,
-      threadAuthorId,
-      replyAuthorId: r.author.id,
-      replyAuthorRole: r.author.role,
-    })
-  );
+  const replies = filterVisibleChallengeReplies(allReplies, {
+    isBlindActive: blindActive,
+    viewerId: viewerId ?? null,
+    viewerRole,
+    threadAuthorId,
+  });
 
   return {
     status,
@@ -1200,33 +1074,6 @@ export async function listActiveRewards(): Promise<RewardItem[]> {
   return getCachedActiveRewards();
 }
 
-export async function listAllRewardsForAdmin(): Promise<RewardItem[]> {
-  if (!isDatabaseConfigured()) return [];
-
-  const sql = getSql();
-  const rows = await sql`
-    SELECT * FROM public.rewards
-    ORDER BY points_cost ASC, created_at DESC
-  `;
-  return rows.map((r) => ({
-    id: String(r.id),
-    name: String(r.name),
-    description: String(r.description ?? ""),
-    imageUrl: r.image_url ? String(r.image_url) : null,
-    pointsCost: Number(r.points_cost),
-    stock: Number(r.stock),
-    isActive: Boolean(r.is_active),
-    createdAt: new Date(String(r.created_at)).toISOString(),
-  }));
-}
-
-export async function listUserPointHistory(
-  userId: string
-): Promise<PointTransactionItem[]> {
-  const res = await listUserPointHistoryPaginated(userId, 1, 40);
-  return res.items;
-}
-
 export async function listUserPointHistoryPaginated(
   userId: string,
   pageRaw = 1,
@@ -1280,13 +1127,6 @@ export async function listUserPointHistoryPaginated(
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
-}
-
-export async function listUserRedemptions(
-  userId: string
-): Promise<RedemptionItem[]> {
-  const res = await listUserRedemptionsPaginated(userId, 1, 50);
-  return res.items;
 }
 
 export async function listUserRedemptionsPaginated(
@@ -1356,112 +1196,6 @@ export async function listUserRedemptionsPaginated(
   }));
 
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
-}
-
-export async function listAllRedemptionsForAdmin(): Promise<RedemptionItem[]> {
-  if (!isDatabaseConfigured()) return [];
-
-  const sql = getSql();
-  const rows = await sql`
-    SELECT
-      rd.*,
-      rw.name AS reward_name,
-      rw.image_url AS reward_image_url,
-      p.display_name AS user_display_name,
-      p.email AS user_email
-    FROM public.redemptions rd
-    JOIN public.rewards rw ON rw.id = rd.reward_id
-    JOIN public.profiles p ON p.id = rd.user_id
-    ORDER BY
-      CASE WHEN rd.status = 'pending' THEN 0 WHEN rd.status = 'approved' THEN 1 ELSE 2 END,
-      rd.created_at DESC
-    LIMIT 100
-  `;
-
-  return rows.map((r) => ({
-    id: String(r.id),
-    userId: String(r.user_id),
-    userDisplayName: String(r.user_display_name),
-    userEmail: String(r.user_email),
-    rewardId: String(r.reward_id),
-    rewardName: String(r.reward_name),
-    rewardImageUrl: r.reward_image_url ? String(r.reward_image_url) : null,
-    pointsSpent: Number(r.points_spent),
-    studentNote: String(r.student_note ?? ""),
-    adminNote: String(r.admin_note ?? ""),
-    status: r.status as RedemptionItem["status"],
-    createdAt: new Date(String(r.created_at)).toISOString(),
-  }));
-}
-
-export async function listAllStudentsForAdmin(): Promise<UserProfile[]> {
-  if (!isDatabaseConfigured()) return [];
-
-  const sql = getSql();
-  const rows = await sql`
-    SELECT * FROM public.profiles
-    ORDER BY role ASC, points_balance DESC, created_at DESC
-    LIMIT 200
-  `;
-  return rows.map(mapProfileRow);
-}
-
-/**
- * Danh sách toàn bộ bài viết (Hỏi bài / News / Research) cho Admin quản lý & thưởng điểm tác giả
- */
-export async function listAllThreadsForAdmin(
-  limit = 150
-): Promise<AdminThreadManageItem[]> {
-  if (!isDatabaseConfigured()) return [];
-
-  const sql = getSql();
-  const rows = await sql`
-    SELECT
-      t.id,
-      t.title,
-      t.thread_type,
-      t.challenge_ends_at,
-      t.grade_tag,
-      t.status,
-      t.bounty_points,
-      t.author_reward_points,
-      t.is_pinned,
-      t.reply_count,
-      t.view_count,
-      t.created_at,
-      c.name AS category_name,
-      p.id AS author_id,
-      p.display_name AS author_name,
-      p.email AS author_email,
-      p.is_banned AS author_banned
-    FROM public.threads t
-    JOIN public.profiles p ON p.id = t.author_id
-    JOIN public.categories c ON c.id = t.category_id
-    ORDER BY t.created_at DESC
-    LIMIT ${limit}
-  `;
-
-  return rows.map((r) => ({
-    id: String(r.id),
-    title: String(r.title),
-    threadType: normalizeThreadType(r.thread_type),
-    challengeEndsAt: r.challenge_ends_at
-      ? new Date(String(r.challenge_ends_at)).toISOString()
-      : null,
-    gradeTag: String(r.grade_tag ?? "Chung"),
-    categoryName: String(r.category_name),
-    status: (r.status as "open" | "solved" | "closed") ?? "open",
-    bountyPoints: Number(r.bounty_points ?? 0),
-    authorRewardPoints: Number(r.author_reward_points ?? 0),
-    isPinned: Boolean(r.is_pinned),
-    replyCount: Number(r.reply_count ?? 0),
-    viewCount: Number(r.view_count ?? 0),
-    createdAt: new Date(String(r.created_at)).toISOString(),
-    authorId: String(r.author_id),
-    authorName: String(r.author_name),
-    authorEmail: String(r.author_email),
-    authorBanned: Boolean(r.author_banned),
-  }));
 }
 
 /**
@@ -1584,8 +1318,7 @@ export async function acceptReplyTransaction(params: {
 }> {
   const sql = getSql();
 
-  return await sql.begin(async (rawTx) => {
-    const tx = rawTx as unknown as ReturnType<typeof getSql>;
+  return await sql.begin(async (tx) => {
     const threadRows = await tx`
       SELECT * FROM public.threads
       WHERE id = ${params.threadId}
@@ -1612,6 +1345,7 @@ export async function acceptReplyTransaction(params: {
       callerId: params.caller.id,
       callerRole: params.caller.role,
       threadAuthorId: String(thread.author_id),
+      threadType: normalizeThreadType(thread.thread_type),
       threadStatus: thread.status as "open" | "solved" | "closed",
       acceptedReplyId: thread.accepted_reply_id
         ? String(thread.accepted_reply_id)
@@ -1679,8 +1413,7 @@ export async function awardChallengeReplyTransaction(params: {
 }> {
   const sql = getSql();
 
-  return await sql.begin(async (rawTx) => {
-    const tx = rawTx as unknown as ReturnType<typeof getSql>;
+  return await sql.begin(async (tx) => {
     const threadRows = await tx`
       SELECT * FROM public.threads
       WHERE id = ${params.threadId}
@@ -1703,11 +1436,11 @@ export async function awardChallengeReplyTransaction(params: {
     }
     const reply = replyRows[0];
 
-    const existingReward = await tx`
-      SELECT 1 FROM public.point_transactions
-      WHERE reference_id = ${params.threadId}
-        AND user_id = ${reply.author_id}
-        AND type = 'challenge_reward'
+    const existingAccepted = await tx`
+      SELECT 1 FROM public.replies
+      WHERE thread_id = ${params.threadId}
+        AND author_id = ${reply.author_id}
+        AND is_accepted = TRUE
       LIMIT 1
     `;
 
@@ -1719,7 +1452,7 @@ export async function awardChallengeReplyTransaction(params: {
       threadAuthorId: String(thread.author_id),
       replyAuthorBanned: Boolean(reply.solver_banned),
       alreadyAccepted: Boolean(reply.is_accepted),
-      alreadyRewardedUser: existingReward.length > 0,
+      alreadyRewardedUser: existingAccepted.length > 0,
       bountyPoints: bounty,
     });
     if (!check.ok) {
@@ -1767,8 +1500,7 @@ export async function redeemRewardTransaction(params: {
 }): Promise<{ rewardName: string; pointsSpent: number }> {
   const sql = getSql();
 
-  return await sql.begin(async (rawTx) => {
-    const tx = rawTx as unknown as ReturnType<typeof getSql>;
+  return await sql.begin(async (tx) => {
     const userRows = await tx`
       SELECT * FROM public.profiles WHERE id = ${params.caller.id} FOR UPDATE
     `;

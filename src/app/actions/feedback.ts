@@ -6,16 +6,10 @@ import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
-import { listPublicFeedbacksPaginatedCached } from "@/lib/feedback-service";
 import { getCurrentUserProfile } from "@/lib/forum-service";
-import type { PaginatedResult } from "@/lib/pagination";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
-import type {
-  FeedbackCategory,
-  FeedbackItem,
-  FeedbackStatus,
-} from "@/lib/types";
+import type { FeedbackCategory, FeedbackStatus } from "@/lib/types";
 
 const ALLOWED_CATEGORIES: FeedbackCategory[] = [
   "bug",
@@ -29,60 +23,6 @@ const ALLOWED_STATUSES: FeedbackStatus[] = [
   "resolved",
   "closed",
 ];
-
-export async function listPublicFeedbacks(): Promise<FeedbackItem[]> {
-  const res = await listPublicFeedbacksPaginated({ page: 1, pageSize: 50 });
-  return res.items;
-}
-
-export async function listPublicFeedbacksPaginated(params: {
-  page?: number;
-  pageSize?: number;
-  category?: FeedbackCategory | "all";
-} = {}): Promise<PaginatedResult<FeedbackItem>> {
-  return listPublicFeedbacksPaginatedCached(params);
-}
-
-export async function listAllFeedbacksForAdmin(): Promise<FeedbackItem[]> {
-  if (!isDatabaseConfigured()) return [];
-
-  try {
-    const sql = getSql();
-    const rows = await sql`
-      SELECT
-        f.*,
-        COALESCE(p.display_name, NULLIF(f.contact_name, ''), 'Khách') AS author_name,
-        COALESCE(p.email, f.contact_email, '') AS resolved_email
-      FROM public.feedbacks f
-      LEFT JOIN public.profiles p ON p.id = f.user_id
-      ORDER BY
-        CASE
-          WHEN f.status = 'open' THEN 0
-          WHEN f.status = 'in_progress' THEN 1
-          ELSE 2
-        END,
-        f.created_at DESC
-      LIMIT 100
-    `;
-
-    return rows.map((r) => ({
-      id: String(r.id),
-      userId: r.user_id ? String(r.user_id) : null,
-      authorName: String(r.author_name),
-      contactEmail: String(r.resolved_email ?? ""),
-      category: (r.category as FeedbackCategory) ?? "bug",
-      title: String(r.title),
-      description: String(r.description),
-      pageUrl: String(r.page_url ?? ""),
-      imageUrls: Array.isArray(r.image_urls) ? (r.image_urls as string[]) : [],
-      status: (r.status as FeedbackStatus) ?? "open",
-      adminReply: String(r.admin_reply ?? ""),
-      createdAt: new Date(String(r.created_at)).toISOString(),
-    }));
-  } catch {
-    return [];
-  }
-}
 
 export async function submitFeedbackAction(input: {
   category: FeedbackCategory;

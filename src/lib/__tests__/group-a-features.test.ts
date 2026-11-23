@@ -8,9 +8,11 @@ import {
 import {
   canViewReplyInChallenge,
   extractMentionedNames,
+  filterVisibleChallengeReplies,
   isChallengeBlindActive,
   isValidThreadType,
   slugifyCollectionTitle,
+  validateAcceptAnswer,
   validateChallengeAward,
   validateChallengeDeadline,
   validateCollectionInput,
@@ -78,9 +80,32 @@ describe("A2: math-diagram — bộ tính toán biểu thức an toàn (no eval)
     expect(h(2)).toBeCloseTo(-3, 8);
   });
 
-  it("từ chối biểu thức chứa định danh lạ hoặc ký tự tiêm mã", () => {
+  it("từ chối biểu thức chứa định danh lạ, ký tự tiêm mã, quá dài hoặc lồng ngoặc quá sâu", () => {
     expect(() => compileMathExpression("window.alert(1)")).toThrow();
     expect(() => compileMathExpression("x + ;")).toThrow();
+    expect(() => compileMathExpression("x + ".repeat(80) + "1")).toThrow();
+    expect(() =>
+      compileMathExpression("(".repeat(30) + "x" + ")".repeat(30))
+    ).toThrow();
+  });
+
+  it("từ chối miền x/y quá rộng (> 10_000) hoặc biên độ cực lớn (1e16 gây treo vòng lặp IEEE 754)", () => {
+    const tooWide = parseGraphBlock(`
+      x: 0..20000
+      y: -5..5
+      f(x) = x
+    `);
+    // Miền không hợp lệ phải bị bỏ qua và giữ mặc định [-6, 6]
+    expect(tooWide.xMin).toBe(-6);
+    expect(tooWide.xMax).toBe(6);
+
+    const ieee754DoS = parseGraphBlock(`
+      x: 10000000000000000..10000000000000002
+      y: -5..5
+      f(x) = x
+    `);
+    expect(ieee754DoS.xMin).toBe(-6);
+    expect(ieee754DoS.xMax).toBe(6);
   });
 
   it("parse khối graph đầy đủ miền x/y, nhiều hàm và điểm đặc biệt", () => {
@@ -172,6 +197,87 @@ describe("A3: Thử thách Tuần (Challenge) — Blind Submission & Chấm nhi�
         replyAuthorRole: "student",
       })
     ).toBe(true);
+
+    // Bình luận gốc của Admin khác (không phải tác giả đề) vẫn công khai
+    expect(
+      canViewReplyInChallenge({
+        isBlindActive: true,
+        viewerId: "student-a",
+        viewerRole: "student",
+        threadAuthorId: "admin-1",
+        replyAuthorId: "admin-2",
+        replyAuthorRole: "admin",
+      })
+    ).toBe(true);
+
+    // Bình luận gốc của tác giả đề (dù role student) vẫn công khai
+    expect(
+      canViewReplyInChallenge({
+        isBlindActive: true,
+        viewerId: "student-a",
+        viewerRole: "student",
+        threadAuthorId: "host-student",
+        replyAuthorId: "host-student",
+        replyAuthorRole: "student",
+      })
+    ).toBe(true);
+  });
+
+  it("ẩn bình luận con của Admin khi trả lời vào bài nộp ẩn của học sinh khác trong Blind Mode", () => {
+    const replies = [
+      {
+        id: "r-admin-announcement",
+        parentReplyId: null,
+        author: { id: "admin-1", role: "admin" as const },
+      },
+      {
+        id: "r-student-a",
+        parentReplyId: null,
+        author: { id: "student-a", role: "student" as const },
+      },
+      {
+        id: "r-admin-feedback-to-a",
+        parentReplyId: "r-student-a",
+        author: { id: "admin-1", role: "admin" as const },
+      },
+    ];
+
+    const visibleToB = filterVisibleChallengeReplies(replies, {
+      isBlindActive: true,
+      viewerId: "student-b",
+      viewerRole: "student",
+      threadAuthorId: "admin-1",
+    });
+    expect(visibleToB.map((r) => r.id)).toEqual(["r-admin-announcement"]);
+
+    const visibleToA = filterVisibleChallengeReplies(replies, {
+      isBlindActive: true,
+      viewerId: "student-a",
+      viewerRole: "student",
+      threadAuthorId: "admin-1",
+    });
+    expect(visibleToA.map((r) => r.id)).toEqual([
+      "r-admin-announcement",
+      "r-student-a",
+      "r-admin-feedback-to-a",
+    ]);
+  });
+
+  it("chặn chọn lời giải trực tiếp (validateAcceptAnswer) trên bài News, Research và Challenge", () => {
+    for (const threadType of ["news", "research", "challenge"] as const) {
+      expect(
+        validateAcceptAnswer({
+          callerId: "owner-1",
+          callerRole: "student",
+          threadAuthorId: "owner-1",
+          threadType,
+          threadStatus: "open",
+          acceptedReplyId: null,
+          replyAuthorId: "student-2",
+          replyAuthorBanned: false,
+        }).ok
+      ).toBe(false);
+    }
   });
 
   it("kiểm tra hạn thử thách và điều kiện chấm điểm nhiều người thắng cuộc", () => {

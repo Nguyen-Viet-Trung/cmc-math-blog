@@ -43,8 +43,7 @@ export async function toggleBookmarkAction(
 
   try {
     const sql = getSql();
-    const bookmarked = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const bookmarked = await sql.begin(async (tx) => {
       const existing = await tx`
         SELECT 1 FROM public.thread_bookmarks
         WHERE user_id = ${user.id} AND thread_id = ${threadId}
@@ -148,6 +147,7 @@ export async function upsertCollectionAction(input: {
 
     revalidateTag(CACHE_TAGS.collections);
     revalidatePath("/collections");
+    revalidatePath("/collections/[slug]", "page");
     revalidatePath(`/collections/${check.slug}`);
     revalidatePath("/admin");
     return { ok: true, id: savedId, slug: check.slug };
@@ -175,6 +175,7 @@ export async function deleteCollectionAction(
     await sql`DELETE FROM public.collections WHERE id = ${collectionId}`;
     revalidateTag(CACHE_TAGS.collections);
     revalidatePath("/collections");
+    revalidatePath("/collections/[slug]", "page");
     revalidatePath("/admin");
     return { ok: true };
   } catch (err) {

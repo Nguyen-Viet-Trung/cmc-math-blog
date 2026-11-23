@@ -22,6 +22,9 @@ export async function GET() {
   });
 }
 
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function PATCH(request: Request) {
   const userId = await getCurrentUserId();
   if (!userId) {
@@ -30,14 +33,27 @@ export async function PATCH(request: Request) {
 
   let notificationId: string | undefined;
   try {
-    const body = (await request.json()) as { id?: string };
-    if (typeof body?.id === "string" && body.id.trim()) {
+    const body = (await request.json()) as { id?: unknown };
+    if (body?.id !== undefined && body?.id !== null && body?.id !== "") {
+      if (typeof body.id !== "string" || !UUID_REGEX.test(body.id.trim())) {
+        return NextResponse.json(
+          { error: "Mã thông báo không hợp lệ." },
+          { status: 400 }
+        );
+      }
       notificationId = body.id.trim();
     }
   } catch {
     // Empty body means mark all as read
   }
 
-  await markNotificationsRead(userId, notificationId);
-  return NextResponse.json({ ok: true });
+  try {
+    await markNotificationsRead(userId, notificationId);
+    return NextResponse.json({ ok: true });
+  } catch {
+    return NextResponse.json(
+      { error: "Không thể cập nhật trạng thái thông báo." },
+      { status: 500 }
+    );
+  }
 }

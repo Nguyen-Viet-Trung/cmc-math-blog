@@ -2,7 +2,6 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { headers } from "next/headers";
-import { redirect } from "next/navigation";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import {
@@ -99,6 +98,7 @@ export async function registerStudentAction(input: {
         updated_at = NOW()
     `;
 
+    revalidateTag(CACHE_TAGS.leaderboard);
     return { ok: true };
   } catch (err) {
     return {
@@ -106,15 +106,6 @@ export async function registerStudentAction(input: {
       error: err instanceof Error ? err.message : "Lỗi hệ thống khi tạo tài khoản.",
     };
   }
-}
-
-export async function signOutAction() {
-  const supabase = await createSupabaseServerClient();
-  if (supabase) {
-    await supabase.auth.signOut();
-  }
-  revalidatePath("/");
-  redirect("/");
 }
 
 export async function updateProfileAction(input: {
@@ -132,6 +123,9 @@ export async function updateProfileAction(input: {
   if (!user) {
     return { ok: false, error: "Bạn cần đăng nhập để cập nhật hồ sơ." };
   }
+  if (user.isBanned) {
+    return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
+  }
 
   const name = input.displayName.trim();
   if (name.length < 2 || name.length > 50) {
@@ -148,26 +142,33 @@ export async function updateProfileAction(input: {
   const grade = input.gradeLevel.trim().slice(0, 30) || "THPT";
   const bio = input.bio.trim().slice(0, 300);
 
-  const sql = getSql();
-  await sql`
-    UPDATE public.profiles
-    SET
-      display_name = ${name},
-      nickname = ${nickname},
-      grade_level = ${grade},
-      bio = ${bio},
-      avatar_url = ${input.avatarUrl},
-      updated_at = NOW()
-    WHERE id = ${user.id}
-  `;
+  try {
+    const sql = getSql();
+    await sql`
+      UPDATE public.profiles
+      SET
+        display_name = ${name},
+        nickname = ${nickname},
+        grade_level = ${grade},
+        bio = ${bio},
+        avatar_url = ${input.avatarUrl},
+        updated_at = NOW()
+      WHERE id = ${user.id}
+    `;
 
-  revalidateTag(CACHE_TAGS.leaderboard);
-  revalidateTag(CACHE_TAGS.threads);
-  revalidatePath("/profile");
-  revalidatePath("/leaderboard");
-  revalidatePath("/admin");
-  revalidatePath("/");
-  return { ok: true };
+    revalidateTag(CACHE_TAGS.leaderboard);
+    revalidateTag(CACHE_TAGS.threads);
+    revalidatePath("/profile");
+    revalidatePath("/leaderboard");
+    revalidatePath("/admin");
+    revalidatePath("/");
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Không thể cập nhật hồ sơ.",
+    };
+  }
 }
 
 export async function changeOwnPasswordAction(input: {

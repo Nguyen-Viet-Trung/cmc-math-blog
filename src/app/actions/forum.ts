@@ -21,8 +21,14 @@ import {
   validateReplyAuthorMutation,
   validateThreadAuthorMutation,
 } from "@/lib/rules";
-import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
+import {
+  deleteStorageImagesByUrls,
+  validateOwnedStorageImageUrls,
+} from "@/lib/storage-cleanup";
 import type { ThreadType } from "@/lib/types";
+
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export async function createThreadAction(input: {
   title: string;
@@ -65,14 +71,23 @@ export async function createThreadAction(input: {
   if (title.length < 8 || title.length > 200) {
     return { ok: false, error: "Tiêu đề bài toán cần từ 8 đến 200 ký tự." };
   }
-  if (content.length < 10 && input.imageUrls.length === 0) {
+  const imgCheck = validateOwnedStorageImageUrls({
+    urls: input.imageUrls,
+    ownerUserId: user.id,
+    userRole: user.role,
+    folder: "threads",
+    maxCount: 6,
+  });
+  if (!imgCheck.ok) {
+    return { ok: false, error: imgCheck.error };
+  }
+  const safeImageUrls = imgCheck.urls;
+
+  if (content.length < 10 && safeImageUrls.length === 0) {
     return {
       ok: false,
       error: "Vui lòng nhập nội dung đề bài hoặc đính kèm ít nhất 1 ảnh đề bài.",
     };
-  }
-  if (input.imageUrls.length > 6) {
-    return { ok: false, error: "Mỗi bài đăng tối đa 6 hình ảnh." };
   }
 
   const threadType = normalizeThreadType(input.threadType);
@@ -127,7 +142,7 @@ export async function createThreadAction(input: {
         ${input.categoryId},
         ${title},
         ${content || "(Xem nội dung trong hình ảnh đính kèm)"},
-        ${sql.array(input.imageUrls)},
+        ${sql.array(safeImageUrls)},
         ${input.gradeTag.trim() || "Chung"},
         ${threadType},
         ${challengeEndsAtIso}::timestamptz,
@@ -181,21 +196,29 @@ export async function createReplyAction(input: {
     };
   }
 
+  const imgCheck = validateOwnedStorageImageUrls({
+    urls: input.imageUrls,
+    ownerUserId: user.id,
+    userRole: user.role,
+    folder: "threads",
+    maxCount: 6,
+  });
+  if (!imgCheck.ok) {
+    return { ok: false, error: imgCheck.error };
+  }
+  const safeImageUrls = imgCheck.urls;
+
   const content = input.content.trim();
-  if (content.length < 3 && input.imageUrls.length === 0) {
+  if (content.length < 3 && safeImageUrls.length === 0) {
     return {
       ok: false,
       error: "Vui lòng nhập lời giải hoặc đính kèm ảnh chụp bài giải.",
     };
   }
-  if (input.imageUrls.length > 6) {
-    return { ok: false, error: "Mỗi lời giải đính kèm tối đa 6 hình ảnh." };
-  }
 
   try {
     const sql = getSql();
-    const threadMeta = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const threadMeta = await sql.begin(async (tx) => {
       const threads = await tx`
         SELECT status, author_id, title, thread_type, challenge_ends_at
         FROM public.threads
@@ -259,7 +282,7 @@ export async function createReplyAction(input: {
           ${user.id},
           ${resolvedParentId}::uuid,
           ${content || "(Xem lời giải chi tiết trong hình ảnh đính kèm)"},
-          ${sql.array(input.imageUrls)}
+          ${sql.array(safeImageUrls)}
         )
       `;
 
@@ -380,6 +403,9 @@ export async function acceptReplyAction(
   if (!user) {
     return { ok: false, error: "Vui lòng đăng nhập để chọn lời giải đúng." };
   }
+  if (user.isBanned) {
+    return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
+  }
 
   try {
     const res = await acceptReplyTransaction({
@@ -429,6 +455,10 @@ export async function toggleUpvoteReplyAction(
     return { ok: false, error: "Chưa kết nối cơ sở dữ liệu." };
   }
 
+  if (!UUID_REGEX.test(threadId) || !UUID_REGEX.test(replyId)) {
+    return { ok: false, error: "Mã chủ đề hoặc bình luận không hợp lệ." };
+  }
+
   const user = await getCurrentUserProfile();
   if (!user) {
     return { ok: false, error: "Vui lòng đăng nhập để bấm cảm ơn lời giải." };
@@ -437,35 +467,46 @@ export async function toggleUpvoteReplyAction(
     return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
   }
 
+  const rate = checkRateLimit(`upvote:${user.id}`, {
+    maxRequests: 60,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (!rate.allowed) {
+    return {
+      ok: false,
+      error: `Bạn thao tác quá nhanh. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+    };
+  }
+
   try {
     const sql = getSql();
-    await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
-      const existing = await tx`
-        SELECT 1 FROM public.reply_upvotes
+    await sql.begin(async (tx) => {
+      const removed = await tx`
+        DELETE FROM public.reply_upvotes
         WHERE reply_id = ${replyId} AND user_id = ${user.id}
+        RETURNING reply_id
       `;
 
-      if (existing.length > 0) {
-        await tx`
-          DELETE FROM public.reply_upvotes
-          WHERE reply_id = ${replyId} AND user_id = ${user.id}
-        `;
+      if (removed.length > 0) {
         await tx`
           UPDATE public.replies
           SET upvotes_count = GREATEST(0, upvotes_count - 1)
           WHERE id = ${replyId}
         `;
       } else {
-        await tx`
+        const inserted = await tx`
           INSERT INTO public.reply_upvotes (reply_id, user_id)
           VALUES (${replyId}, ${user.id})
+          ON CONFLICT (reply_id, user_id) DO NOTHING
+          RETURNING reply_id
         `;
-        await tx`
-          UPDATE public.replies
-          SET upvotes_count = upvotes_count + 1
-          WHERE id = ${replyId}
-        `;
+        if (inserted.length > 0) {
+          await tx`
+            UPDATE public.replies
+            SET upvotes_count = upvotes_count + 1
+            WHERE id = ${replyId}
+          `;
+        }
       }
     });
 
@@ -525,7 +566,7 @@ export async function updateThreadAction(input: {
   try {
     const sql = getSql();
     const rows = await sql`
-      SELECT author_id, status, accepted_reply_id
+      SELECT author_id, status, accepted_reply_id, image_urls
       FROM public.threads
       WHERE id = ${input.threadId}
       LIMIT 1
@@ -548,13 +589,28 @@ export async function updateThreadAction(input: {
       return { ok: false, error: check.error };
     }
 
+    const existingUrls = Array.isArray(row.image_urls)
+      ? (row.image_urls as string[])
+      : [];
+    const imgCheck = validateOwnedStorageImageUrls({
+      urls: input.imageUrls,
+      ownerUserId: user.id,
+      userRole: user.role,
+      folder: "threads",
+      existingAllowedUrls: existingUrls,
+      maxCount: 6,
+    });
+    if (!imgCheck.ok) {
+      return { ok: false, error: imgCheck.error };
+    }
+
     await sql`
       UPDATE public.threads
       SET
         title = ${title},
         grade_tag = ${input.gradeTag.trim().slice(0, 30) || "Chung"},
         content = ${content || "(Xem nội dung trong hình ảnh đính kèm)"},
-        image_urls = ${sql.array(input.imageUrls)},
+        image_urls = ${sql.array(imgCheck.urls)},
         updated_at = NOW()
       WHERE id = ${input.threadId}
     `;
@@ -581,6 +637,9 @@ export async function deleteOwnThreadAction(
   const user = await getCurrentUserProfile();
   if (!user) {
     return { ok: false, error: "Vui lòng đăng nhập để xóa bài viết." };
+  }
+  if (user.isBanned) {
+    return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
   }
 
   try {
@@ -622,7 +681,12 @@ export async function deleteOwnThreadAction(
 
     await sql`DELETE FROM public.threads WHERE id = ${threadId}`;
     after(async () => {
-      await deleteStorageImagesByUrls(orphanUrls);
+      await deleteStorageImagesByUrls(
+        orphanUrls,
+        user.role === "admin"
+          ? undefined
+          : { ownerUserId: user.id, folder: "threads" }
+      );
     });
 
     revalidateTag(CACHE_TAGS.threads);
@@ -678,7 +742,7 @@ export async function updateReplyAction(input: {
   try {
     const sql = getSql();
     const rows = await sql`
-      SELECT r.id, r.thread_id, r.author_id, r.is_accepted, t.status AS thread_status
+      SELECT r.id, r.thread_id, r.author_id, r.is_accepted, r.image_urls, t.status AS thread_status
       FROM public.replies r
       JOIN public.threads t ON t.id = r.thread_id
       WHERE r.id = ${input.replyId}
@@ -699,11 +763,26 @@ export async function updateReplyAction(input: {
       return { ok: false, error: check.error };
     }
 
+    const existingUrls = Array.isArray(row.image_urls)
+      ? (row.image_urls as string[])
+      : [];
+    const imgCheck = validateOwnedStorageImageUrls({
+      urls: input.imageUrls,
+      ownerUserId: user.id,
+      userRole: user.role,
+      folder: "threads",
+      existingAllowedUrls: existingUrls,
+      maxCount: 6,
+    });
+    if (!imgCheck.ok) {
+      return { ok: false, error: imgCheck.error };
+    }
+
     await sql`
       UPDATE public.replies
       SET
         content = ${content || "(Xem lời giải chi tiết trong hình ảnh đính kèm)"},
-        image_urls = ${sql.array(input.imageUrls)},
+        image_urls = ${sql.array(imgCheck.urls)},
         updated_at = NOW()
       WHERE id = ${input.replyId}
     `;
@@ -736,11 +815,13 @@ export async function deleteOwnReplyAction(
   if (!user) {
     return { ok: false, error: "Vui lòng đăng nhập để xóa bình luận." };
   }
+  if (user.isBanned) {
+    return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
+  }
 
   try {
     const sql = getSql();
-    const deleted = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const deleted = await sql.begin(async (tx) => {
       const rows = await tx`
         SELECT r.id, r.thread_id, r.author_id, r.is_accepted, r.image_urls, t.status AS thread_status
         FROM public.replies r
@@ -763,6 +844,32 @@ export async function deleteOwnReplyAction(
         throw new Error(check.error);
       }
 
+      const childRows = await tx`
+        SELECT id, author_id, is_accepted, image_urls
+        FROM public.replies
+        WHERE parent_reply_id = ${replyId}
+        FOR UPDATE
+      `;
+      if (
+        user.role !== "admin" &&
+        childRows.some(
+          (c) => String(c.author_id) !== user.id || Boolean(c.is_accepted)
+        )
+      ) {
+        throw new Error(
+          "Không thể xóa bình luận này vì đã có thành viên khác phản hồi bên dưới."
+        );
+      }
+
+      const orphanUrls: string[] = Array.isArray(row.image_urls)
+        ? [...(row.image_urls as string[])]
+        : [];
+      for (const c of childRows) {
+        if (Array.isArray(c.image_urls)) {
+          orphanUrls.push(...(c.image_urls as string[]));
+        }
+      }
+
       await tx`DELETE FROM public.replies WHERE id = ${replyId}`;
       await tx`
         UPDATE public.threads
@@ -771,15 +878,18 @@ export async function deleteOwnReplyAction(
       `;
       return {
         threadId: String(row.thread_id),
-        imageUrls: Array.isArray(row.image_urls)
-          ? (row.image_urls as string[])
-          : [],
+        imageUrls: orphanUrls,
       };
     });
 
     after(async () => {
       await Promise.all([
-        deleteStorageImagesByUrls(deleted.imageUrls),
+        deleteStorageImagesByUrls(
+          deleted.imageUrls,
+          user.role === "admin"
+            ? undefined
+            : { ownerUserId: user.id, folder: "threads" }
+        ),
         broadcastThreadEventFromServer({
           threadId: deleted.threadId,
           kind: "moderated",

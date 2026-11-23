@@ -159,8 +159,7 @@ export async function reviewRedemptionAction(input: {
     const admin = await requireAdmin();
     const sql = getSql();
 
-    const reviewResult = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const reviewResult = await sql.begin(async (tx) => {
       const rows = await tx`
         SELECT rd.*, rw.name AS reward_name
         FROM public.redemptions rd
@@ -272,8 +271,7 @@ export async function adjustStudentPointsAction(input: {
     }
 
     const sql = getSql();
-    await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    await sql.begin(async (tx) => {
       const rows = await tx`
         SELECT points_balance FROM public.profiles WHERE id = ${input.studentId} FOR UPDATE
       `;
@@ -634,8 +632,7 @@ export async function awardThreadAuthorAction(input: {
     const note = input.reason?.trim().slice(0, 200) || "";
     const sql = getSql();
 
-    const result = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const result = await sql.begin(async (tx) => {
       const rows = await tx`
         SELECT t.id, t.title, t.thread_type, t.author_id, t.author_reward_points,
                p.display_name AS author_name, p.is_banned AS author_banned
@@ -750,8 +747,7 @@ export async function revokeAcceptedReplyAction(input: {
       "Admin kiểm duyệt thu hồi lời giải đúng / nghi vấn buff điểm";
     const sql = getSql();
 
-    const result = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const result = await sql.begin(async (tx) => {
 
       const replyRows = await tx`
         SELECT r.id, r.thread_id, r.author_id, r.is_accepted, t.title, t.bounty_points, t.status
@@ -793,8 +789,11 @@ export async function revokeAcceptedReplyAction(input: {
       await tx`
         UPDATE public.threads
         SET
-          accepted_reply_id = NULL,
-          status = CASE WHEN status = 'closed' THEN 'closed' ELSE 'open' END,
+          accepted_reply_id = CASE WHEN accepted_reply_id = ${row.id} THEN NULL ELSE accepted_reply_id END,
+          status = CASE
+            WHEN accepted_reply_id = ${row.id} AND status <> 'closed' THEN 'open'
+            ELSE status
+          END,
           updated_at = NOW()
         WHERE id = ${row.thread_id}
       `;
@@ -876,8 +875,7 @@ export async function deleteReplyByAdminAction(input: {
       "Admin xóa bình luận vi phạm / nghi vấn buff điểm";
     const sql = getSql();
 
-    const result = await sql.begin(async (rawTx) => {
-      const tx = rawTx as unknown as ReturnType<typeof getSql>;
+    const result = await sql.begin(async (tx) => {
 
       const replyRows = await tx`
         SELECT r.id, r.thread_id, r.author_id, r.is_accepted, r.image_urls, t.title, t.bounty_points
@@ -892,46 +890,75 @@ export async function deleteReplyByAdminAction(input: {
       }
 
       const row = replyRows[0];
+      const childRows = await tx`
+        SELECT id, author_id, is_accepted, image_urls
+        FROM public.replies
+        WHERE parent_reply_id = ${row.id}
+        FOR UPDATE
+      `;
+
+      const affectedReplies = [
+        {
+          id: String(row.id),
+          author_id: String(row.author_id),
+          is_accepted: Boolean(row.is_accepted),
+          image_urls: row.image_urls,
+        },
+        ...childRows.map((c) => ({
+          id: String(c.id),
+          author_id: String(c.author_id),
+          is_accepted: Boolean(c.is_accepted),
+          image_urls: c.image_urls,
+        })),
+      ];
+      const deletedIds = affectedReplies.map((r) => r.id);
+      const orphanUrls: string[] = [];
       let revokedPoints = 0;
 
-      if (row.is_accepted) {
+      for (const target of affectedReplies) {
+        if (Array.isArray(target.image_urls)) {
+          orphanUrls.push(...(target.image_urls as string[]));
+        }
+        if (!target.is_accepted) continue;
+
         const txRows = await tx`
           SELECT amount
           FROM public.point_transactions
           WHERE reference_id = ${row.thread_id}
-            AND user_id = ${row.author_id}
+            AND user_id = ${target.author_id}
             AND type IN ('accepted_answer', 'challenge_reward')
           ORDER BY created_at DESC
           LIMIT 1
         `;
-        revokedPoints = Math.max(
+        const pts = Math.max(
           0,
           Number(txRows[0]?.amount ?? row.bounty_points ?? 0)
         );
+        revokedPoints += pts;
 
         const profileRows = await tx`
-          SELECT points_balance FROM public.profiles WHERE id = ${row.author_id} FOR UPDATE
+          SELECT points_balance FROM public.profiles WHERE id = ${target.author_id} FOR UPDATE
         `;
         const actualDeduct = Math.min(
           Number(profileRows[0]?.points_balance ?? 0),
-          revokedPoints
+          pts
         );
 
         await tx`
           UPDATE public.profiles
           SET
-            points_balance = GREATEST(0, points_balance - ${revokedPoints}),
-            total_earned_points = GREATEST(0, total_earned_points - ${revokedPoints}),
+            points_balance = GREATEST(0, points_balance - ${pts}),
+            total_earned_points = GREATEST(0, total_earned_points - ${pts}),
             solved_count = GREATEST(0, solved_count - 1),
             updated_at = NOW()
-          WHERE id = ${row.author_id}
+          WHERE id = ${target.author_id}
         `;
 
-        if (revokedPoints > 0) {
+        if (pts > 0) {
           await tx`
             INSERT INTO public.point_transactions (user_id, amount, type, reason, reference_id, created_by)
             VALUES (
-              ${row.author_id},
+              ${target.author_id},
               ${-actualDeduct},
               'admin_deduct',
               ${`Xóa bình luận & thu hồi điểm bài "${String(row.title).slice(0, 60)}": ${reasonText}`},
@@ -948,9 +975,9 @@ export async function deleteReplyByAdminAction(input: {
         UPDATE public.threads
         SET
           reply_count = (SELECT COUNT(*)::int FROM public.replies WHERE thread_id = ${row.thread_id}),
-          accepted_reply_id = CASE WHEN accepted_reply_id = ${row.id} THEN NULL ELSE accepted_reply_id END,
+          accepted_reply_id = CASE WHEN accepted_reply_id = ANY(${sql.array(deletedIds)}::uuid[]) THEN NULL ELSE accepted_reply_id END,
           status = CASE
-            WHEN accepted_reply_id = ${row.id} AND status <> 'closed' THEN 'open'
+            WHEN accepted_reply_id = ANY(${sql.array(deletedIds)}::uuid[]) AND status <> 'closed' THEN 'open'
             ELSE status
           END,
           updated_at = NOW()
@@ -960,9 +987,7 @@ export async function deleteReplyByAdminAction(input: {
       return {
         threadId: String(row.thread_id),
         revokedPoints,
-        imageUrls: Array.isArray(row.image_urls)
-          ? (row.image_urls as string[])
-          : [],
+        imageUrls: orphanUrls,
       };
     });
 

@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { buildParameterizedQuery } from "../db";
 import { checkRateLimit, resetRateLimitStore } from "../rate-limit";
-import { extractStoragePathsFromUrls } from "../storage-cleanup";
+import {
+  extractStoragePathsFromUrls,
+  validateOwnedStorageImageUrls,
+} from "../storage-cleanup";
 
 describe("checkRateLimit — chống spam theo cửa sổ trượt", () => {
   beforeEach(() => {
@@ -47,6 +50,47 @@ describe("extractStoragePathsFromUrls — trích xuất đường dẫn ảnh c�
       "threads/u1/123.webp",
       "avatars/u2/img 1.png",
     ]);
+  });
+
+  it("chặn học sinh gắn URL ảnh của người khác / bucket ngoài / path traversal, cho phép ảnh chính chủ và Admin", () => {
+    const ownUrl =
+      "https://abc.supabase.co/storage/v1/object/public/math-forum-media/threads/u1/123.webp";
+    const otherUserUrl =
+      "https://abc.supabase.co/storage/v1/object/public/math-forum-media/threads/u2/456.webp";
+    const rewardUrl =
+      "https://abc.supabase.co/storage/v1/object/public/math-forum-media/rewards/admin/prize.webp";
+
+    expect(
+      validateOwnedStorageImageUrls({
+        urls: [ownUrl],
+        ownerUserId: "u1",
+        userRole: "student",
+      })
+    ).toEqual({ ok: true, urls: [ownUrl] });
+
+    expect(
+      validateOwnedStorageImageUrls({
+        urls: [otherUserUrl],
+        ownerUserId: "u1",
+        userRole: "student",
+      }).ok
+    ).toBe(false);
+
+    expect(
+      validateOwnedStorageImageUrls({
+        urls: [rewardUrl],
+        ownerUserId: "u1",
+        userRole: "student",
+      }).ok
+    ).toBe(false);
+
+    expect(
+      validateOwnedStorageImageUrls({
+        urls: [otherUserUrl],
+        ownerUserId: "admin-1",
+        userRole: "admin",
+      })
+    ).toEqual({ ok: true, urls: [otherUserUrl] });
   });
 });
 

@@ -1,15 +1,23 @@
 "use client";
 
+import { useState } from "react";
+import Link from "next/link";
 import {
   Award,
+  Check,
   CheckCircle2,
   Loader2,
+  Pencil,
   Radio,
   RefreshCw,
   ThumbsUp,
+  Trash2,
   Users,
+  X,
 } from "lucide-react";
+import { deleteOwnReplyAction, updateReplyAction } from "@/app/actions/forum";
 import { MathContent } from "@/components/MathContent";
+import { MathEditor } from "@/components/MathEditor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +30,8 @@ import { cn } from "@/lib/utils";
 interface ThreadReplyListProps {
   replies: ReplyItem[];
   threadAuthorId: string;
+  viewerId: string | null;
+  isAdmin: boolean;
   bountyPoints: number;
   status: ThreadStatus;
   isArticleThread: boolean;
@@ -35,11 +45,21 @@ interface ThreadReplyListProps {
   onRefresh: () => void;
   onUpvote: (replyId: string) => void;
   onAccept: (replyId: string) => void;
+  onFeedback: (
+    feedback: { type: "success" | "error"; text: string } | null
+  ) => void;
+}
+
+function isEdited(createdAt: string, updatedAt?: string): boolean {
+  if (!updatedAt) return false;
+  return new Date(updatedAt).getTime() - new Date(createdAt).getTime() > 5000;
 }
 
 export function ThreadReplyList({
   replies,
   threadAuthorId,
+  viewerId,
+  isAdmin,
   bountyPoints,
   status,
   isArticleThread,
@@ -53,7 +73,57 @@ export function ThreadReplyList({
   onRefresh,
   onUpvote,
   onAccept,
+  onFeedback,
 }: ThreadReplyListProps) {
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState("");
+  const [editImages, setEditImages] = useState<string[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  function startEdit(r: ReplyItem) {
+    setEditingId(r.id);
+    setEditContent(r.content);
+    setEditImages(r.imageUrls);
+    onFeedback(null);
+  }
+
+  async function handleSaveEdit(e: React.FormEvent, replyId: string) {
+    e.preventDefault();
+    setBusyId(replyId);
+    const res = await updateReplyAction({
+      replyId,
+      content: editContent,
+      imageUrls: editImages,
+    });
+    setBusyId(null);
+    if (!res.ok) {
+      onFeedback({
+        type: "error",
+        text: res.error || "Không thể lưu chỉnh sửa bình luận.",
+      });
+      return;
+    }
+    setEditingId(null);
+    onFeedback({ type: "success", text: "Đã cập nhật bình luận!" });
+    onRefresh();
+  }
+
+  async function handleDeleteReply(replyId: string) {
+    if (!window.confirm("Bạn chắc chắn muốn xóa bình luận này?")) return;
+    setBusyId(replyId);
+    const res = await deleteOwnReplyAction(replyId);
+    setBusyId(null);
+    if (!res.ok) {
+      onFeedback({
+        type: "error",
+        text: res.error || "Không thể xóa bình luận.",
+      });
+      return;
+    }
+    onFeedback({ type: "success", text: "Đã xóa bình luận." });
+    onRefresh();
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -113,6 +183,13 @@ export function ThreadReplyList({
           {replies.map((r) => {
             const isSelfReply = r.author.id === threadAuthorId;
             const isOptimistic = r.id.startsWith("optimistic-");
+            const isOwner = viewerId === r.author.id;
+            const canMutateReply =
+              !isOptimistic &&
+              !r.isAccepted &&
+              ((isOwner && status !== "closed") || isAdmin);
+            const isEditing = editingId === r.id;
+            const isBusy = busyId === r.id;
 
             return (
               <Card
@@ -120,7 +197,7 @@ export function ThreadReplyList({
                 className={cn(
                   "p-5 sm:p-6",
                   r.isAccepted &&
-                    "border-2 border-success bg-success-surface/50",
+                  "border-2 border-success bg-success-surface/50",
                   isOptimistic && "opacity-80"
                 )}
               >
@@ -145,14 +222,18 @@ export function ThreadReplyList({
                           {r.author.displayName.slice(0, 1).toUpperCase()}
                         </AvatarFallback>
                       </Avatar>
-                      <span className="text-xs font-semibold text-foreground">
+                      <Link
+                        href={`/members/${r.author.id}`}
+                        prefetch={true}
+                        className="text-xs font-semibold text-foreground hover:text-primary"
+                      >
                         {r.author.displayName}
                         {r.author.nickname ? (
                           <span className="ml-1 font-normal text-muted-foreground">
                             ({r.author.nickname})
                           </span>
                         ) : null}
-                      </span>
+                      </Link>
                       <Badge variant="outline">{r.author.gradeLevel}</Badge>
                       <span className="text-xs font-bold tabular-nums text-success">
                         • {r.author.solvedCount} bài đã giải
@@ -170,27 +251,93 @@ export function ThreadReplyList({
                       {isOptimistic
                         ? "Đang gửi..."
                         : new Date(r.createdAt).toLocaleString("vi-VN")}
+                      {!isOptimistic && isEdited(r.createdAt, r.updatedAt) && (
+                        <span className="ml-1 italic">(đã chỉnh sửa)</span>
+                      )}
                     </span>
                   </div>
 
                   <Separator />
 
-                  <MathContent content={r.content} imageUrls={r.imageUrls} />
+                  {isEditing ? (
+                    <form
+                      onSubmit={(e) => void handleSaveEdit(e, r.id)}
+                      className="space-y-3"
+                    >
+                      <MathEditor
+                        value={editContent}
+                        onChange={setEditContent}
+                        imageUrls={editImages}
+                        onChangeImages={setEditImages}
+                        rows={4}
+                      />
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setEditingId(null)}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Hủy
+                        </Button>
+                        <Button type="submit" size="sm" disabled={isBusy}>
+                          {isBusy ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                          Lưu
+                        </Button>
+                      </div>
+                    </form>
+                  ) : (
+                    <MathContent content={r.content} imageUrls={r.imageUrls} />
+                  )}
 
-                  {!isOptimistic && (
+                  {!isOptimistic && !isEditing && (
                     <>
                       <Separator />
                       <div className="flex flex-wrap items-center justify-between gap-3">
-                        <Button
-                          size="sm"
-                          variant={r.viewerHasUpvoted ? "default" : "outline"}
-                          disabled={isUpvoting}
-                          onClick={() => onUpvote(r.id)}
-                        >
-                          <ThumbsUp className="h-3.5 w-3.5" />
-                          {isArticleThread ? "Hữu ích" : "Lời giải hay"} (
-                          {r.upvotesCount})
-                        </Button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant={r.viewerHasUpvoted ? "default" : "outline"}
+                            disabled={isUpvoting}
+                            onClick={() => onUpvote(r.id)}
+                          >
+                            <ThumbsUp className="h-3.5 w-3.5" />
+                            {isArticleThread ? "Hữu ích" : "Lời giải hay"} (
+                            {r.upvotesCount})
+                          </Button>
+
+                          {canMutateReply && (
+                            <>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={isBusy}
+                                onClick={() => startEdit(r)}
+                                className="text-xs text-muted-foreground hover:text-foreground"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                                Sửa
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                disabled={isBusy}
+                                onClick={() => void handleDeleteReply(r.id)}
+                                className="text-xs text-muted-foreground hover:text-destructive"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                Xóa
+                              </Button>
+                            </>
+                          )}
+                        </div>
 
                         {canChooseAccepted && !isSelfReply && (
                           <Button

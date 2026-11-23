@@ -1,52 +1,64 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { ExternalLink, Gift } from "lucide-react";
 import {
   awardThreadAuthorAction,
   moderateThreadAction,
 } from "@/app/actions/admin";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  useAdminPaginatedList,
+  useDebouncedValue,
+} from "@/hooks/useAdminPaginatedList";
 import { getThreadTypeLabel } from "@/lib/format";
+import type { PaginatedResult } from "@/lib/pagination";
 import type { AdminThreadManageItem, ThreadType } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
 export function AdminThreadsTab({
-  threads,
+  initialThreads,
   onNotice,
 }: {
-  threads: AdminThreadManageItem[];
+  initialThreads: PaginatedResult<AdminThreadManageItem>;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [threadSearch, setThreadSearch] = useState("");
   const [threadTypeFilter, setThreadTypeFilter] = useState<ThreadType | "all">(
     "all"
   );
+  const [page, setPage] = useState(1);
   const [rewardInputs, setRewardInputs] = useState<Record<string, string>>({});
   const [rewardReasons, setRewardReasons] = useState<Record<string, string>>(
     {}
   );
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const filteredThreads = useMemo(() => {
-    const q = threadSearch.trim().toLowerCase();
-    return threads.filter((t) => {
-      if (threadTypeFilter !== "all" && t.threadType !== threadTypeFilter) {
-        return false;
-      }
-      if (q) {
-        const hay = `${t.title} ${t.authorName} ${t.authorEmail} ${t.categoryName}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
+  const debouncedSearch = useDebouncedValue(threadSearch, 250);
+  const { data, isFetching } = useAdminPaginatedList({
+    resource: "threads",
+    page,
+    pageSize: initialThreads.pageSize,
+    query: debouncedSearch,
+    type: threadTypeFilter,
+    initialData: initialThreads,
+  });
+
+  async function refreshThreads() {
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-list", "threads"],
     });
-  }, [threads, threadSearch, threadTypeFilter]);
+    router.refresh();
+  }
 
   async function handleAward(t: AdminThreadManageItem) {
     const pts = Number(rewardInputs[t.id] ?? "20");
@@ -69,7 +81,7 @@ export function AdminThreadsTab({
       type: "success",
       text: res.message || "Đã thưởng điểm cho tác giả bài viết!",
     });
-    router.refresh();
+    await refreshThreads();
   }
 
   async function handleChangeType(threadId: string, threadType: ThreadType) {
@@ -88,7 +100,7 @@ export function AdminThreadsTab({
       return;
     }
     onNotice({ type: "success", text: "Đã cập nhật loại bài viết!" });
-    router.refresh();
+    await refreshThreads();
   }
 
   return (
@@ -97,26 +109,20 @@ export function AdminThreadsTab({
         <Input
           type="text"
           value={threadSearch}
-          onChange={(e) => setThreadSearch(e.target.value)}
+          onChange={(e) => {
+            setThreadSearch(e.target.value);
+            setPage(1);
+          }}
           placeholder="Tìm theo tiêu đề bài, tên hoặc email tác giả..."
           className="sm:max-w-md"
         />
         <div className="flex flex-wrap gap-1.5">
           {(
             [
-              { key: "all", label: `Tất cả (${threads.length})` },
-              {
-                key: "question",
-                label: `Hỏi bài (${threads.filter((t) => t.threadType === "question").length})`,
-              },
-              {
-                key: "news",
-                label: `News (${threads.filter((t) => t.threadType === "news").length})`,
-              },
-              {
-                key: "research",
-                label: `Research (${threads.filter((t) => t.threadType === "research").length})`,
-              },
+              { key: "all", label: "Tất cả" },
+              { key: "question", label: "Hỏi bài" },
+              { key: "news", label: "News" },
+              { key: "research", label: "Research" },
             ] as const
           ).map((opt) => (
             <Button
@@ -124,7 +130,10 @@ export function AdminThreadsTab({
               type="button"
               size="sm"
               variant={threadTypeFilter === opt.key ? "default" : "outline"}
-              onClick={() => setThreadTypeFilter(opt.key)}
+              onClick={() => {
+                setThreadTypeFilter(opt.key);
+                setPage(1);
+              }}
             >
               {opt.label}
             </Button>
@@ -132,15 +141,15 @@ export function AdminThreadsTab({
         </div>
       </Card>
 
-      {filteredThreads.length === 0 ? (
+      {data.items.length === 0 ? (
         <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
-          {threads.length === 0
+          {initialThreads.totalCount === 0
             ? "Chưa có bài viết nào trên diễn đàn."
             : "Không có bài viết nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
         <div className="space-y-3">
-          {filteredThreads.map((t) => {
+          {data.items.map((t) => {
             const isBusy = busyId === t.id;
             const ptsVal = rewardInputs[t.id] ?? "20";
             return (
@@ -212,7 +221,7 @@ export function AdminThreadsTab({
                         [t.id]: e.target.value,
                       })
                     }
-                    className="h-8 w-24 font-semibold text-bounty"
+                    className="h-8 w-24 font-semibold tabular-nums text-bounty"
                     aria-label="Số điểm thưởng"
                   />
                   <Input
@@ -241,6 +250,15 @@ export function AdminThreadsTab({
               </Card>
             );
           })}
+
+          <PaginationBar
+            page={data.page}
+            totalPages={data.totalPages}
+            totalCount={data.totalCount}
+            itemLabel="bài viết"
+            isLoading={isFetching}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

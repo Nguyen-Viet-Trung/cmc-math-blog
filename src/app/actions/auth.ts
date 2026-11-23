@@ -26,7 +26,7 @@ export async function registerStudentAction(input: {
   if (!isDatabaseConfigured() || !isSupabaseStorageConfigured()) {
     return {
       ok: false,
-      error: "Chưa cấu hình đầy đủ khóa Supabase trong key.txt.",
+      error: "Hệ thống đang bảo trì kết nối máy chủ. Vui lòng thử lại sau.",
     };
   }
 
@@ -150,4 +150,67 @@ export async function updateProfileAction(input: {
   revalidatePath("/admin");
   revalidatePath("/");
   return { ok: true };
+}
+
+export async function changeOwnPasswordAction(input: {
+  currentPassword: string;
+  newPassword: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  if (!isDatabaseConfigured() || !isSupabaseStorageConfigured()) {
+    return {
+      ok: false,
+      error: "Hệ thống đang bảo trì kết nối máy chủ. Vui lòng thử lại sau.",
+    };
+  }
+
+  const user = await getCurrentUserProfile();
+  if (!user) {
+    return { ok: false, error: "Bạn cần đăng nhập để đổi mật khẩu." };
+  }
+
+  const newPassword = input.newPassword;
+  if (!input.currentPassword || input.currentPassword.length < 6) {
+    return { ok: false, error: "Vui lòng nhập mật khẩu hiện tại." };
+  }
+  if (newPassword.length < 6 || newPassword.length > 72) {
+    return { ok: false, error: "Mật khẩu mới cần từ 6 đến 72 ký tự." };
+  }
+  if (newPassword === input.currentPassword) {
+    return { ok: false, error: "Mật khẩu mới phải khác mật khẩu hiện tại." };
+  }
+
+  try {
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) {
+      return { ok: false, error: "Không thể khởi tạo phiên xác thực." };
+    }
+
+    const { error: verifyErr } = await supabase.auth.signInWithPassword({
+      email: user.email,
+      password: input.currentPassword,
+    });
+    if (verifyErr) {
+      return { ok: false, error: "Mật khẩu hiện tại không chính xác." };
+    }
+
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(
+      user.id,
+      { password: newPassword }
+    );
+    if (updateErr) {
+      return {
+        ok: false,
+        error: updateErr.message || "Không thể cập nhật mật khẩu mới.",
+      };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error ? err.message : "Lỗi hệ thống khi đổi mật khẩu.",
+    };
+  }
 }

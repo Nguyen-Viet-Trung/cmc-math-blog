@@ -1,9 +1,48 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getCurrentUserProfile, getThreadDetail } from "@/lib/forum-service";
+import { getThreadTypeLabel } from "@/lib/format";
+import {
+  getCurrentUserProfile,
+  getThreadDetail,
+  getThreadSeoMeta,
+} from "@/lib/forum-service";
 import { ThreadInteractive } from "./ThreadInteractive";
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}): Promise<Metadata> {
+  const { id } = await params;
+  const meta = await getThreadSeoMeta(id);
+  if (!meta) {
+    return { title: "Không tìm thấy bài viết" };
+  }
+
+  const typeLabel = getThreadTypeLabel(meta.threadType);
+  const description = meta.excerpt
+    ? `[${typeLabel} · ${meta.categoryName}] ${meta.excerpt}`
+    : `${typeLabel} thuộc chuyên mục ${meta.categoryName} đăng bởi ${meta.authorName} trên CMC — CMA MATHS CLUB blog.`;
+
+  return {
+    title: meta.title,
+    description,
+    openGraph: {
+      type: "article",
+      title: `${meta.title} | CMC`,
+      description,
+      siteName: "CMC — CMA MATHS CLUB blog",
+    },
+    twitter: {
+      card: "summary",
+      title: `${meta.title} | CMC`,
+      description,
+    },
+  };
+}
 
 export default async function ThreadDetailPage({
   params,

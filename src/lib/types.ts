@@ -73,6 +73,7 @@ export interface ReplyItem {
   upvotesCount: number;
   viewerHasUpvoted: boolean;
   createdAt: string;
+  updatedAt?: string;
   author: {
     id: string;
     displayName: string;
@@ -99,6 +100,7 @@ export interface ThreadDetail {
   viewCount: number;
   replyCount: number;
   createdAt: string;
+  updatedAt?: string;
   author: {
     id: string;
     displayName: string;
@@ -252,4 +254,46 @@ export interface BuffPairSummary {
   totalAcceptedCount: number;
   totalPointsTransferred: number;
   isMutual: boolean;
+}
+
+export type NotificationType =
+  | "new_reply"
+  | "answer_accepted"
+  | "author_reward"
+  | "redemption_update"
+  | "system";
+
+export interface NotificationItem {
+  id: string;
+  userId: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  href: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+export interface PaginatedThreadsResult {
+  items: ThreadSummary[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+}
+
+export interface PublicMemberProfile {
+  id: string;
+  displayName: string;
+  nickname: string;
+  avatarUrl: string | null;
+  bio: string;
+  gradeLevel: string;
+  role: "student" | "admin";
+  totalEarnedPoints: number;
+  solvedCount: number;
+  joinedAt: string;
+  threadsCount: number;
+  repliesCount: number;
+  recentThreads: ThreadSummary[];
 }

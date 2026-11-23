@@ -5,6 +5,9 @@ import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
 import { getCurrentUserProfile } from "@/lib/forum-service";
+import { createNotification } from "@/lib/notifications";
+import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
+import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
   isValidThreadType,
   parseClubJoinedDate,
@@ -150,7 +153,7 @@ export async function reviewRedemptionAction(input: {
     const admin = await requireAdmin();
     const sql = getSql();
 
-    await sql.begin(async (rawTx) => {
+    const reviewResult = await sql.begin(async (rawTx) => {
       const tx = rawTx as unknown as ReturnType<typeof getSql>;
       const rows = await tx`
         SELECT rd.*, rw.name AS reward_name
@@ -208,6 +211,28 @@ export async function reviewRedemptionAction(input: {
         SET status = ${input.newStatus}, admin_note = ${nextAdminNote}, updated_at = NOW()
         WHERE id = ${input.redemptionId}
       `;
+
+      return {
+        userId: String(current.user_id),
+        rewardName: String(current.reward_name),
+        pointsSpent: Number(current.points_spent),
+        nextAdminNote,
+      };
+    });
+
+    const notifTitle =
+      input.newStatus === "fulfilled"
+        ? `Đã hoàn thành trao quà "${reviewResult.rewardName}"`
+        : input.newStatus === "approved"
+          ? `Đơn đổi quà "${reviewResult.rewardName}" đã được duyệt`
+          : `Đơn đổi quà "${reviewResult.rewardName}" bị từ chối (đã hoàn +${reviewResult.pointsSpent}đ)`;
+
+    void createNotification({
+      userId: reviewResult.userId,
+      type: "redemption_update",
+      title: notifTitle,
+      body: reviewResult.nextAdminNote || "Kiểm tra chi tiết tại trang Cửa hàng Đổi quà.",
+      href: "/rewards",
     });
 
     revalidateTag(CACHE_TAGS.rewards);
@@ -356,6 +381,65 @@ export async function updateStudentJoinedAtAction(input: {
   }
 }
 
+export async function resetStudentPasswordAction(input: {
+  studentId: string;
+  newPassword: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const admin = await requireAdmin();
+    if (admin.id === input.studentId) {
+      return {
+        ok: false,
+        error: "Để đổi mật khẩu của chính bạn, hãy dùng mục Đổi mật khẩu ở trang Hồ sơ.",
+      };
+    }
+
+    const pwd = input.newPassword.trim();
+    if (pwd.length < 6 || pwd.length > 72) {
+      return {
+        ok: false,
+        error: "Mật khẩu mới cần có từ 6 đến 72 ký tự.",
+      };
+    }
+
+    const sql = getSql();
+    const rows = await sql`
+      SELECT id, role FROM public.profiles WHERE id = ${input.studentId} LIMIT 1
+    `;
+    if (rows.length === 0) {
+      return { ok: false, error: "Không tìm thấy tài khoản học sinh." };
+    }
+    if (rows[0].role === "admin") {
+      return {
+        ok: false,
+        error: "Không thể đặt lại mật khẩu cho tài khoản Quản trị viên khác.",
+      };
+    }
+
+    const supabaseAdmin = createSupabaseAdminClient();
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(
+      input.studentId,
+      { password: pwd }
+    );
+    if (error) {
+      return {
+        ok: false,
+        error: error.message || "Không thể đặt lại mật khẩu.",
+      };
+    }
+
+    return { ok: true };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Lỗi hệ thống khi đặt lại mật khẩu học sinh.",
+    };
+  }
+}
+
 export async function moderateThreadAction(input: {
   threadId: string;
   action: "toggle_pin" | "toggle_close" | "delete" | "set_bounty" | "set_type";
@@ -367,7 +451,18 @@ export async function moderateThreadAction(input: {
     const sql = getSql();
 
     if (input.action === "delete") {
+      const [tRows, rRows] = await Promise.all([
+        sql`SELECT image_urls FROM public.threads WHERE id = ${input.threadId}`,
+        sql`SELECT image_urls FROM public.replies WHERE thread_id = ${input.threadId}`,
+      ]);
+      const orphanUrls: string[] = [];
+      for (const row of [...tRows, ...rRows]) {
+        if (Array.isArray(row.image_urls)) {
+          orphanUrls.push(...(row.image_urls as string[]));
+        }
+      }
       await sql`DELETE FROM public.threads WHERE id = ${input.threadId}`;
+      void deleteStorageImagesByUrls(orphanUrls);
     } else if (input.action === "toggle_pin") {
       await sql`
         UPDATE public.threads SET is_pinned = NOT is_pinned, updated_at = NOW()
@@ -501,9 +596,19 @@ export async function awardThreadAuthorAction(input: {
       `;
 
       return {
+        authorId: String(row.author_id),
         authorName: String(row.author_name),
+        threadTitle: String(row.title),
         newTotal: Number(updatedThreads[0].author_reward_points),
       };
+    });
+
+    void createNotification({
+      userId: result.authorId,
+      type: "author_reward",
+      title: `Admin thưởng +${pts} điểm cho bài viết của bạn`,
+      body: note || `Bài "${result.threadTitle.slice(0, 80)}"`,
+      href: `/threads/${input.threadId}`,
     });
 
     revalidateTag(CACHE_TAGS.threads);
@@ -675,7 +780,7 @@ export async function deleteReplyByAdminAction(input: {
       const tx = rawTx as unknown as ReturnType<typeof getSql>;
 
       const replyRows = await tx`
-        SELECT r.id, r.thread_id, r.author_id, r.is_accepted, t.title, t.bounty_points
+        SELECT r.id, r.thread_id, r.author_id, r.is_accepted, r.image_urls, t.title, t.bounty_points
         FROM public.replies r
         JOIN public.threads t ON t.id = r.thread_id
         WHERE r.id = ${input.replyId}
@@ -755,8 +860,13 @@ export async function deleteReplyByAdminAction(input: {
       return {
         threadId: String(row.thread_id),
         revokedPoints,
+        imageUrls: Array.isArray(row.image_urls)
+          ? (row.image_urls as string[])
+          : [],
       };
     });
+
+    void deleteStorageImagesByUrls(result.imageUrls);
 
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);

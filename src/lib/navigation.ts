@@ -23,6 +23,7 @@ export function getRoutePageTitle(pathname: string): string {
   if (pathname.startsWith("/leaderboard")) return "Bảng vàng";
   if (pathname.startsWith("/feedback")) return "Góp ý & Báo lỗi";
   if (pathname.startsWith("/profile")) return "Hồ sơ học sinh";
+  if (pathname.startsWith("/members/")) return "Hồ sơ thành viên";
   if (pathname.startsWith("/login")) return "Đăng nhập";
   if (pathname.startsWith("/admin")) return "Admin Portal";
   return "CMC";

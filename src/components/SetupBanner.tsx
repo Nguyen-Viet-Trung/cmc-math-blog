@@ -13,10 +13,9 @@ export function SetupBanner({ show }: { show: boolean }) {
       <div className="container flex items-center gap-2.5">
         <AlertTriangle className="h-4 w-4 shrink-0 text-bounty" />
         <p className="leading-snug">
-          <strong>Chế độ xem trước (Demo Mode):</strong> Sau khi điền khóa
-          Supabase vào <code className="rounded bg-background/60 px-1 py-0.5 font-mono text-xs">key.txt</code>, chạy{" "}
-          <code className="rounded bg-background/60 px-1 py-0.5 font-mono text-xs">npm run setup</code> để
-          kết nối cơ sở dữ liệu thật.
+          <strong>Thông báo hệ thống:</strong> Kết nối cơ sở dữ liệu hiện đang
+          tạm gián đoạn. Một số tính năng đăng nhập và lưu dữ liệu có thể chưa
+          khả dụng.
         </p>
       </div>
     </div>

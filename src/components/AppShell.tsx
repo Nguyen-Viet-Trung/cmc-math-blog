@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { AppMobileDrawer } from "@/components/AppMobileDrawer";
 import { AppSidebar } from "@/components/AppSidebar";
+import { NotificationBell } from "@/components/NotificationBell";
 import { SetupBanner } from "@/components/SetupBanner";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -113,14 +114,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className="flex min-w-0 flex-1 flex-col">
         <SetupBanner show={isDemoMode} />
 
-        <header className="sticky top-0 z-30 w-full border-b border-border bg-background/95 backdrop-blur-sm">
+        <header className="sticky top-0 z-30 flex h-[52px] w-full items-center border-b border-border bg-background/95 backdrop-blur-sm">
           {pendingHref && (
             <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden bg-primary/15">
               <div className="h-full w-1/2 animate-progress-indeterminate bg-primary" />
             </div>
           )}
 
-          <div className="flex h-[52px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <div className="flex h-full w-full items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
             {/* Trái: Mobile drawer + logo HOẶC Desktop collapse toggle + tiêu đề trang */}
             <div className="flex min-w-0 items-center gap-2">
               <Button
@@ -181,6 +182,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <span>{user.pointsBalance} điểm</span>
                 </Link>
               )}
+
+              {user && <NotificationBell />}
 
               <ThemeToggle />
 

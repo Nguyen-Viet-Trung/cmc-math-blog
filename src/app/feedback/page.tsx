@@ -1,4 +1,4 @@
-import { listPublicFeedbacks } from "@/app/actions/feedback";
+import { listPublicFeedbacksPaginated } from "@/app/actions/feedback";
 import { getCurrentUserProfile } from "@/lib/forum-service";
 import { FeedbackClient } from "./FeedbackClient";
 
@@ -9,10 +9,10 @@ export const metadata = {
 };
 
 export default async function FeedbackPage() {
-  const [user, items] = await Promise.all([
+  const [user, paginated] = await Promise.all([
     getCurrentUserProfile(),
-    listPublicFeedbacks(),
+    listPublicFeedbacksPaginated({ page: 1, pageSize: 8 }),
   ]);
 
-  return <FeedbackClient user={user} initialItems={items} />;
+  return <FeedbackClient user={user} initialFeedbacks={paginated} />;
 }

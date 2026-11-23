@@ -6,6 +6,7 @@ import {
   isSupabaseStorageConfigured,
 } from "@/lib/env";
 import { getCurrentUserProfile } from "@/lib/forum-service";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { validateUploadPayload } from "@/lib/rules";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 
@@ -17,7 +18,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Chưa cấu hình khóa Supabase Storage trong key.txt. Vui lòng điền key và chạy `npm run setup`.",
+            "Dịch vụ lưu trữ hình ảnh hiện đang tạm gián đoạn. Vui lòng thử lại sau.",
         },
         { status: 503 }
       );
@@ -35,6 +36,19 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Tài khoản của bạn đang bị khóa." },
         { status: 403 }
+      );
+    }
+
+    const rate = checkRateLimit(`upload:${user.id}`, {
+      maxRequests: 15,
+      windowMs: 5 * 60 * 1000,
+    });
+    if (!rate.allowed) {
+      return NextResponse.json(
+        {
+          error: `Bạn tải ảnh quá nhanh. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+        },
+        { status: 429 }
       );
     }
 

@@ -55,8 +55,10 @@ describe("format utilities — định dạng thời gian, nhãn bài viết & U
         cat: "dai-so",
         status: "open",
         q: "Cauchy",
+        page: 3,
       })
-    ).toBe("/?type=research&cat=dai-so&status=open&q=Cauchy");
+    ).toBe("/?type=research&cat=dai-so&status=open&q=Cauchy&page=3");
+    expect(buildHomeFilterUrl({ page: 1 })).toBe("/");
   });
 });
 

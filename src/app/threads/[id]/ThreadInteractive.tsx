@@ -10,10 +10,14 @@ import {
   Gift,
   Loader2,
   Newspaper,
+  Pencil,
   Pin,
   Send,
+  Trash2,
 } from "lucide-react";
+import { deleteOwnThreadAction } from "@/app/actions/forum";
 import { ThreadAdminBar } from "@/app/threads/[id]/_components/ThreadAdminBar";
+import { ThreadEditForm } from "@/app/threads/[id]/_components/ThreadEditForm";
 import { ThreadReplyList } from "@/app/threads/[id]/_components/ThreadReplyList";
 import { MathContent } from "@/components/MathContent";
 import { MathEditor } from "@/components/MathEditor";
@@ -38,6 +42,8 @@ export function ThreadInteractive({
   const { refreshSession } = useAppSession();
   const [replyContent, setReplyContent] = useState("");
   const [replyImages, setReplyImages] = useState<string[]>([]);
+  const [isEditingThread, setIsEditingThread] = useState(false);
+  const [deletingThread, setDeletingThread] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     text: string;
@@ -73,11 +79,24 @@ export function ThreadInteractive({
   const isAdmin = viewer?.role === "admin";
   const isArticleThread =
     discussion.threadType === "news" || discussion.threadType === "research";
+  const canEditThread =
+    (isThreadOwner && discussion.status !== "closed") || isAdmin;
+  const canDeleteOwnThread =
+    isThreadOwner &&
+    !isAdmin &&
+    discussion.status === "open" &&
+    discussion.acceptedReplyId === null;
   const canChooseAccepted =
     !isArticleThread &&
     discussion.status === "open" &&
     discussion.acceptedReplyId === null &&
     (isThreadOwner || isAdmin);
+  const isThreadEdited = Boolean(
+    thread.updatedAt &&
+    new Date(thread.updatedAt).getTime() -
+    new Date(thread.createdAt).getTime() >
+    5000
+  );
 
   async function handleAccept(replyId: string) {
     setFeedback(null);
@@ -139,6 +158,24 @@ export function ThreadInteractive({
     }
   }
 
+  async function handleDeleteOwnThread() {
+    if (!window.confirm("Bạn chắc chắn muốn xóa vĩnh viễn bài viết này?")) {
+      return;
+    }
+    setDeletingThread(true);
+    const res = await deleteOwnThreadAction(thread.id);
+    setDeletingThread(false);
+    if (!res.ok) {
+      setFeedback({
+        type: "error",
+        text: res.error || "Không thể xóa bài viết.",
+      });
+      return;
+    }
+    router.push("/");
+    router.refresh();
+  }
+
   async function handleModerated(refreshSessionAlso = false) {
     await broadcastUpdate("moderated");
     await invalidateDiscussion();
@@ -150,7 +187,6 @@ export function ThreadInteractive({
 
   return (
     <div className="space-y-6">
-      {/* KHỐI ĐỀ BÀI / BÀI VIẾT GỐC */}
       <Card className="p-5 sm:p-8">
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -200,41 +236,103 @@ export function ThreadInteractive({
             </div>
           </div>
 
-          <h1 className="heading-1">{thread.title}</h1>
+          {isEditingThread ? (
+            <ThreadEditForm
+              threadId={thread.id}
+              initialTitle={thread.title}
+              initialGradeTag={thread.gradeTag}
+              initialContent={thread.content}
+              initialImageUrls={thread.imageUrls}
+              onSaved={async () => {
+                setIsEditingThread(false);
+                setFeedback({
+                  type: "success",
+                  text: "Đã lưu chỉnh sửa bài viết!",
+                });
+                router.refresh();
+              }}
+              onCancel={() => setIsEditingThread(false)}
+              onError={(msg) => setFeedback({ type: "error", text: msg })}
+            />
+          ) : (
+            <>
+              <h1 className="heading-1">{thread.title}</h1>
 
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex flex-wrap items-center gap-2">
-              <Avatar className="h-6 w-6">
-                <AvatarImage
-                  src={thread.author.avatarUrl ?? undefined}
-                  alt={thread.author.displayName}
-                />
-                <AvatarFallback className="text-[11px]">
-                  {thread.author.displayName.slice(0, 1).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <span className="text-xs font-semibold text-foreground">
-                {thread.author.displayName}
-                {thread.author.nickname ? (
-                  <span className="ml-1 font-normal text-muted-foreground">
-                    ({thread.author.nickname})
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage
+                      src={thread.author.avatarUrl ?? undefined}
+                      alt={thread.author.displayName}
+                    />
+                    <AvatarFallback className="text-[11px]">
+                      {thread.author.displayName.slice(0, 1).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <Link
+                    href={`/members/${thread.author.id}`}
+                    prefetch={true}
+                    className="text-xs font-semibold text-foreground hover:text-primary"
+                  >
+                    {thread.author.displayName}
+                    {thread.author.nickname ? (
+                      <span className="ml-1 font-normal text-muted-foreground">
+                        ({thread.author.nickname})
+                      </span>
+                    ) : null}
+                  </Link>
+                  <span className="text-xs text-muted-foreground">
+                    ({thread.author.gradeLevel}) •{" "}
+                    {new Date(thread.createdAt).toLocaleString("vi-VN")}
+                    {isThreadEdited && (
+                      <span className="ml-1 italic">(đã chỉnh sửa)</span>
+                    )}
                   </span>
-                ) : null}
-              </span>
-              <span className="text-xs text-muted-foreground">
-                ({thread.author.gradeLevel}) •{" "}
-                {new Date(thread.createdAt).toLocaleString("vi-VN")}
-              </span>
-            </div>
+                </div>
 
-            <span className="text-xs tabular-nums text-muted-foreground">
-              {thread.viewCount} lượt xem
-            </span>
-          </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs tabular-nums text-muted-foreground">
+                    {thread.viewCount} lượt xem
+                  </span>
+                  {canEditThread && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        setFeedback(null);
+                        setIsEditingThread(true);
+                      }}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                      Sửa bài
+                    </Button>
+                  )}
+                  {canDeleteOwnThread && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={deletingThread}
+                      onClick={() => void handleDeleteOwnThread()}
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Xóa bài
+                    </Button>
+                  )}
+                </div>
+              </div>
 
-          <Separator />
+              <Separator />
 
-          <MathContent content={thread.content} imageUrls={thread.imageUrls} />
+              <MathContent
+                content={thread.content}
+                imageUrls={thread.imageUrls}
+              />
+            </>
+          )}
         </div>
       </Card>
 
@@ -262,6 +360,8 @@ export function ThreadInteractive({
       <ThreadReplyList
         replies={discussion.replies}
         threadAuthorId={thread.author.id}
+        viewerId={viewer?.id ?? null}
+        isAdmin={isAdmin}
         bountyPoints={discussion.bountyPoints}
         status={discussion.status}
         isArticleThread={isArticleThread}
@@ -275,9 +375,9 @@ export function ThreadInteractive({
         onRefresh={() => void invalidateDiscussion()}
         onUpvote={(id) => void handleUpvote(id)}
         onAccept={(id) => void handleAccept(id)}
+        onFeedback={setFeedback}
       />
 
-      {/* KHUNG SOẠN BÌNH LUẬN / LỜI GIẢI MỚI */}
       <Card className="p-5 sm:p-7">
         <div className="space-y-4">
           <h3 className="heading-3">

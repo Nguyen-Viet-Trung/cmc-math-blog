@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Clock, History } from "lucide-react";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import type { PaginatedResult } from "@/lib/pagination";
 import type { PointTransactionItem, RedemptionItem } from "@/lib/types";
 
 const STATUS_BADGE: Record<
@@ -28,92 +32,152 @@ const STATUS_BADGE: Record<
 };
 
 export function RewardHistoryPanels({
-  redemptions,
-  pointHistory,
+  initialRedemptions,
+  initialPointHistory,
 }: {
-  redemptions: RedemptionItem[];
-  pointHistory: PointTransactionItem[];
+  initialRedemptions: PaginatedResult<RedemptionItem>;
+  initialPointHistory: PaginatedResult<PointTransactionItem>;
 }) {
+  const [redemptionPage, setRedemptionPage] = useState(1);
+  const [pointsPage, setPointsPage] = useState(1);
+
+  const redemptionsQuery = useQuery<PaginatedResult<RedemptionItem>>({
+    queryKey: ["my-redemptions", redemptionPage],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/rewards/redemptions?page=${redemptionPage}&pageSize=${initialRedemptions.pageSize}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error("Không thể tải lịch sử đổi quà.");
+      return (await res.json()) as PaginatedResult<RedemptionItem>;
+    },
+    initialData: redemptionPage === 1 ? initialRedemptions : undefined,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+
+  const pointsQuery = useQuery<PaginatedResult<PointTransactionItem>>({
+    queryKey: ["my-points-history", pointsPage],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/rewards/points?page=${pointsPage}&pageSize=${initialPointHistory.pageSize}`,
+        { cache: "no-store" }
+      );
+      if (!res.ok) throw new Error("Không thể tải lịch sử điểm.");
+      return (await res.json()) as PaginatedResult<PointTransactionItem>;
+    },
+    initialData: pointsPage === 1 ? initialPointHistory : undefined,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+
+  const redemptions = redemptionsQuery.data ?? initialRedemptions;
+  const pointHistory = pointsQuery.data ?? initialPointHistory;
+
   return (
     <div className="grid grid-cols-1 gap-6 pt-2 lg:grid-cols-2">
-      <Card className="space-y-3 p-5">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
-          <Clock className="h-4 w-4 text-primary" />
-          Đơn đổi quà của bạn ({redemptions.length})
-        </h3>
-        {redemptions.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Bạn chưa có đơn đổi quà nào.
-          </p>
-        ) : (
-          <div className="max-h-80 space-y-2.5 overflow-y-auto pr-1">
-            {redemptions.map((rd) => {
-              const badge = STATUS_BADGE[rd.status];
-              return (
-                <div
-                  key={rd.id}
-                  className="space-y-1.5 rounded-xl border border-border bg-muted/40 p-3 text-xs"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <strong className="text-foreground">{rd.rewardName}</strong>
-                    <Badge variant={badge.variant} className="rounded-full">
-                      {badge.label}
-                    </Badge>
-                  </div>
-                  <p className="tabular-nums text-muted-foreground">
-                    Điểm sử dụng:{" "}
-                    <strong className="text-foreground">
-                      -{rd.pointsSpent}đ
-                    </strong>{" "}
-                    • {new Date(rd.createdAt).toLocaleDateString("vi-VN")}
-                  </p>
-                  {rd.adminNote && (
-                    <p className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground">
-                      <strong>Phản hồi từ Admin:</strong> {rd.adminNote}
+      <Card className="flex flex-col justify-between space-y-3 p-5">
+        <div className="space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <Clock className="h-4 w-4 text-primary" />
+            Đơn đổi quà của bạn ({redemptions.totalCount})
+          </h3>
+          {redemptions.items.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Bạn chưa có đơn đổi quà nào.
+            </p>
+          ) : (
+            <div className="space-y-2.5">
+              {redemptions.items.map((rd) => {
+                const badge = STATUS_BADGE[rd.status];
+                return (
+                  <div
+                    key={rd.id}
+                    className="space-y-1.5 rounded-xl border border-border bg-muted/40 p-3 text-xs"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <strong className="text-foreground">
+                        {rd.rewardName}
+                      </strong>
+                      <Badge variant={badge.variant} className="rounded-full">
+                        {badge.label}
+                      </Badge>
+                    </div>
+                    <p className="tabular-nums text-muted-foreground">
+                      Điểm sử dụng:{" "}
+                      <strong className="text-foreground">
+                        -{rd.pointsSpent}đ
+                      </strong>{" "}
+                      • {new Date(rd.createdAt).toLocaleDateString("vi-VN")}
                     </p>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+                    {rd.adminNote && (
+                      <p className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground">
+                        <strong>Phản hồi từ Admin:</strong> {rd.adminNote}
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        <PaginationBar
+          page={redemptions.page}
+          totalPages={redemptions.totalPages}
+          totalCount={redemptions.totalCount}
+          itemLabel="đơn"
+          isLoading={redemptionsQuery.isFetching}
+          onPageChange={setRedemptionPage}
+        />
       </Card>
 
-      <Card className="space-y-3 p-5">
-        <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
-          <History className="h-4 w-4 text-success" />
-          Lịch sử cộng / trừ điểm gần đây
-        </h3>
-        {pointHistory.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            Chưa có giao dịch điểm nào. Hãy giải bài toán đầu tiên nhé!
-          </p>
-        ) : (
-          <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-            {pointHistory.map((tx) => (
-              <div
-                key={tx.id}
-                className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 p-3 text-xs"
-              >
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-foreground">
-                    {tx.reason}
-                  </p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {new Date(tx.createdAt).toLocaleString("vi-VN")}
-                  </p>
-                </div>
-                <span
-                  className={`shrink-0 font-extrabold tabular-nums ${
-                    tx.amount >= 0 ? "text-success" : "text-destructive"
-                  }`}
+      <Card className="flex flex-col justify-between space-y-3 p-5">
+        <div className="space-y-3">
+          <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <History className="h-4 w-4 text-success" />
+            Lịch sử cộng / trừ điểm ({pointHistory.totalCount})
+          </h3>
+          {pointHistory.items.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              Chưa có giao dịch điểm nào. Hãy giải bài toán đầu tiên nhé!
+            </p>
+          ) : (
+            <div className="space-y-2">
+              {pointHistory.items.map((tx) => (
+                <div
+                  key={tx.id}
+                  className="flex items-center justify-between gap-3 rounded-xl border border-border bg-muted/40 p-3 text-xs"
                 >
-                  {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}đ
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-foreground">
+                      {tx.reason}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      {new Date(tx.createdAt).toLocaleString("vi-VN")}
+                    </p>
+                  </div>
+                  <span
+                    className={`shrink-0 font-extrabold tabular-nums ${
+                      tx.amount >= 0 ? "text-success" : "text-destructive"
+                    }`}
+                  >
+                    {tx.amount >= 0 ? `+${tx.amount}` : tx.amount}đ
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <PaginationBar
+          page={pointHistory.page}
+          totalPages={pointHistory.totalPages}
+          totalCount={pointHistory.totalCount}
+          itemLabel="giao dịch"
+          isLoading={pointsQuery.isFetching}
+          onPageChange={setPointsPage}
+        />
       </Card>
     </div>
   );

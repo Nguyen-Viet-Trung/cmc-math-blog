@@ -6,7 +6,7 @@ import {
   getLeaderboard,
   getSiteSettings,
   listActiveRewards,
-  listThreads,
+  listThreadsPaginated,
 } from "@/lib/forum-service";
 import type { ThreadType } from "@/lib/types";
 
@@ -18,6 +18,7 @@ export default async function HomePage({
     status?: string;
     type?: string;
     q?: string;
+    page?: string;
   }>;
 }) {
   const params = await searchParams;
@@ -33,19 +34,26 @@ export default async function HomePage({
       ? params.status
       : "all";
   const searchQuery = params.q?.trim() || "";
+  const parsedPage = Number(params.page);
+  const currentPage =
+    Number.isFinite(parsedPage) && parsedPage >= 1
+      ? Math.floor(parsedPage)
+      : 1;
   const hasActiveFilter = Boolean(
     activeCat || activeStatus !== "all" || activeType !== "all" || searchQuery
   );
 
-  const [settings, categories, threads, leaderboard, rewards] =
+  const [settings, categories, paginated, leaderboard, rewards] =
     await Promise.all([
       getSiteSettings(),
       getCategories(),
-      listThreads({
+      listThreadsPaginated({
         categorySlug: activeCat || undefined,
         status: activeStatus,
         threadType: activeType,
         query: searchQuery || undefined,
+        page: currentPage,
+        pageSize: 20,
       }),
       getLeaderboard(5),
       listActiveRewards(),
@@ -71,10 +79,22 @@ export default async function HomePage({
             activeCat={activeCat}
             activeStatus={activeStatus}
             searchQuery={searchQuery}
-            threadCount={threads.length}
+            threadCount={paginated.totalCount}
             categories={categories}
           />
-          <HomeThreadList threads={threads} hasActiveFilter={hasActiveFilter} />
+          <HomeThreadList
+            threads={paginated.items}
+            hasActiveFilter={hasActiveFilter}
+            pagination={{
+              page: paginated.page,
+              totalPages: paginated.totalPages,
+              totalCount: paginated.totalCount,
+              activeType,
+              activeCat,
+              activeStatus,
+              searchQuery,
+            }}
+          />
         </section>
 
         <HomeRightRail activeLeaders={activeLeaders} rewards={rewards} />

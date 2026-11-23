@@ -140,6 +140,18 @@ CREATE TABLE IF NOT EXISTS public.feedbacks (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 11. Thông báo trong ứng dụng (In-app Notifications)
+CREATE TABLE IF NOT EXISTS public.notifications (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system')),
+  title TEXT NOT NULL,
+  body TEXT NOT NULL DEFAULT '',
+  href TEXT NOT NULL DEFAULT '/',
+  is_read BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Indexes tối ưu tốc độ truy vấn
 CREATE INDEX IF NOT EXISTS idx_threads_category_created ON public.threads(category_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_status_created ON public.threads(status, created_at DESC);
@@ -149,6 +161,14 @@ CREATE INDEX IF NOT EXISTS idx_point_tx_user_created ON public.point_transaction
 CREATE INDEX IF NOT EXISTS idx_redemptions_status_created ON public.redemptions(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_leaderboard ON public.profiles(total_earned_points DESC, solved_count DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_status_created ON public.feedbacks(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_author_id ON public.threads(author_id);
+CREATE INDEX IF NOT EXISTS idx_replies_author_id ON public.replies(author_id);
+CREATE INDEX IF NOT EXISTS idx_redemptions_user_id ON public.redemptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_redemptions_reward_id ON public.redemptions(reward_id);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_user_id ON public.feedbacks(user_id);
+CREATE INDEX IF NOT EXISTS idx_reply_upvotes_user_id ON public.reply_upvotes(user_id);
+CREATE INDEX IF NOT EXISTS idx_point_transactions_created_by ON public.point_transactions(created_by);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_unread_created ON public.notifications(user_id, is_read, created_at DESC);
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.
@@ -163,6 +183,7 @@ ALTER TABLE public.point_transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.rewards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.redemptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feedbacks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- Khởi tạo cấu hình mặc định
 INSERT INTO public.site_settings (id, site_name, default_solved_points)

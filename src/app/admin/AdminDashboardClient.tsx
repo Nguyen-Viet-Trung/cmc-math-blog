@@ -12,6 +12,8 @@ import {
 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import type { AdminDashboardCounts } from "@/lib/admin-list-service";
+import type { PaginatedResult } from "@/lib/pagination";
 import { analyzeAdminReplyAudits } from "@/lib/rules";
 import type {
   AdminReplyAuditItem,
@@ -42,21 +44,23 @@ type AdminTabId =
 export function AdminDashboardClient({
   isDemo,
   settings,
-  rewards,
-  redemptions,
-  students,
-  feedbacks,
+  counts,
+  initialRewards,
+  initialRedemptions,
+  initialStudents,
+  initialFeedbacks,
+  initialThreads,
   replies,
-  threads,
 }: {
   isDemo: boolean;
   settings: SiteSettings;
-  rewards: RewardItem[];
-  redemptions: RedemptionItem[];
-  students: UserProfile[];
-  feedbacks: FeedbackItem[];
+  counts: AdminDashboardCounts;
+  initialRewards: PaginatedResult<RewardItem>;
+  initialRedemptions: PaginatedResult<RedemptionItem>;
+  initialStudents: PaginatedResult<UserProfile>;
+  initialFeedbacks: PaginatedResult<FeedbackItem>;
+  initialThreads: PaginatedResult<AdminThreadManageItem>;
   replies: AdminReplyAuditItem[];
-  threads: AdminThreadManageItem[];
 }) {
   const [tab, setTab] = useState<AdminTabId>("rewards");
   const [notice, setNotice] = useState<AdminNotice | null>(null);
@@ -67,23 +71,19 @@ export function AdminDashboardClient({
     [replies]
   );
 
-  const pendingCount = redemptions.filter((r) => r.status === "pending").length;
-  const openFeedbackCount = feedbacks.filter(
-    (f) => f.status === "open" || f.status === "in_progress"
-  ).length;
   const suspiciousRepliesCount = Object.keys(flagsByReplyId).length;
 
   const tabs: { id: AdminTabId; label: string; icon: typeof Gift }[] = [
-    { id: "rewards", label: `Quà tặng (${rewards.length})`, icon: Gift },
+    { id: "rewards", label: `Quà tặng (${counts.rewardsCount})`, icon: Gift },
     {
       id: "redemptions",
-      label: `Đổi quà (${pendingCount} mới)`,
+      label: `Đổi quà (${counts.pendingRedemptionsCount} mới)`,
       icon: CheckCircle2,
     },
-    { id: "students", label: `Học sinh (${students.length})`, icon: Users },
+    { id: "students", label: `Học sinh (${counts.studentsCount})`, icon: Users },
     {
       id: "threads",
-      label: `Bài viết & Thưởng (${threads.length})`,
+      label: `Bài viết & Thưởng (${counts.threadsCount})`,
       icon: FileText,
     },
     {
@@ -96,7 +96,7 @@ export function AdminDashboardClient({
     },
     {
       id: "feedbacks",
-      label: `Góp ý (${openFeedbackCount} mở)`,
+      label: `Góp ý (${counts.openFeedbacksCount} mở)`,
       icon: Bug,
     },
     { id: "settings", label: "Cài đặt", icon: Settings },
@@ -120,7 +120,7 @@ export function AdminDashboardClient({
               Học sinh
             </span>
             <strong className="text-base font-bold text-foreground">
-              {students.length}
+              {counts.studentsCount}
             </strong>
           </div>
           <div className="border-l border-border pl-4">
@@ -128,7 +128,7 @@ export function AdminDashboardClient({
               Đơn chờ duyệt
             </span>
             <strong className="text-base font-bold text-bounty">
-              {pendingCount}
+              {counts.pendingRedemptionsCount}
             </strong>
           </div>
           <div className="border-l border-border pl-4">
@@ -176,14 +176,20 @@ export function AdminDashboardClient({
       )}
 
       {tab === "rewards" && (
-        <AdminRewardsTab rewards={rewards} onNotice={setNotice} />
+        <AdminRewardsTab
+          initialRewards={initialRewards}
+          onNotice={setNotice}
+        />
       )}
       {tab === "redemptions" && (
-        <AdminRedemptionsTab redemptions={redemptions} onNotice={setNotice} />
+        <AdminRedemptionsTab
+          initialRedemptions={initialRedemptions}
+          onNotice={setNotice}
+        />
       )}
       {tab === "students" && (
         <AdminStudentsTab
-          students={students}
+          initialStudents={initialStudents}
           onNotice={setNotice}
           onInspectStudentReplies={(email) => {
             setReplySearch(email);
@@ -192,7 +198,10 @@ export function AdminDashboardClient({
         />
       )}
       {tab === "threads" && (
-        <AdminThreadsTab threads={threads} onNotice={setNotice} />
+        <AdminThreadsTab
+          initialThreads={initialThreads}
+          onNotice={setNotice}
+        />
       )}
       {tab === "replies" && (
         <AdminRepliesAuditTab
@@ -205,7 +214,10 @@ export function AdminDashboardClient({
         />
       )}
       {tab === "feedbacks" && (
-        <AdminFeedbacksTab feedbacks={feedbacks} onNotice={setNotice} />
+        <AdminFeedbacksTab
+          initialFeedbacks={initialFeedbacks}
+          onNotice={setNotice}
+        />
       )}
       {tab === "settings" && (
         <AdminSettingsTab settings={settings} onNotice={setNotice} />

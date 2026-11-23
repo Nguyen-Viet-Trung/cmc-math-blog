@@ -38,9 +38,13 @@ export function HomeRightRail({ activeLeaders, rewards }: HomeRightRailProps) {
                     {i + 1}.
                   </span>
                   <div className="min-w-0">
-                    <p className="truncate font-medium text-foreground">
+                    <Link
+                      href={`/members/${u.id}`}
+                      prefetch={true}
+                      className="block truncate font-medium text-foreground hover:text-primary"
+                    >
                       {u.displayName}
-                    </p>
+                    </Link>
                     <p className="text-[11px] text-muted-foreground">
                       {u.solvedCount} bài giải đúng
                     </p>

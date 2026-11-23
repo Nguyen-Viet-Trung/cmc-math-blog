@@ -25,8 +25,25 @@ export const metadata: Metadata = {
     default: "CMC — CMA MATHS CLUB blog",
     template: "%s | CMC",
   },
+  icons: {
+    icon: "/icon.svg",
+  },
   description:
-    "CMA MATHS CLUB blog (CMC) — Cộng đồng học sinh hỏi đáp bài tập Toán học, gõ công thức LaTeX, chia sẻ lời giải hay và tích điểm đổi quà.",
+    "CMA MATHS CLUB blog (CMC) — Cộng đồng học sinh hỏi đáp bài tập Toán học, bài News & Research, gõ công thức LaTeX, chia sẻ lời giải hay và tích điểm đổi quà.",
+  openGraph: {
+    type: "website",
+    locale: "vi_VN",
+    siteName: "CMC — CMA MATHS CLUB blog",
+    title: "CMC — CMA MATHS CLUB blog",
+    description:
+      "Cộng đồng học sinh hỏi đáp Toán học, bài News & Research, hỗ trợ LaTeX và tích điểm đổi quà.",
+  },
+  twitter: {
+    card: "summary",
+    title: "CMC — CMA MATHS CLUB blog",
+    description:
+      "Cộng đồng học sinh hỏi đáp Toán học, bài News & Research, hỗ trợ LaTeX và tích điểm đổi quà.",
+  },
 };
 
 /**

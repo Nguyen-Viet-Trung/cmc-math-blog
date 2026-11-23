@@ -9,6 +9,7 @@ import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import type { PaginatedResult } from "@/lib/pagination";
 import type {
   PointTransactionItem,
   RedemptionItem,
@@ -19,13 +20,13 @@ import type {
 export function RewardsClient({
   user,
   rewards,
-  redemptions,
-  pointHistory,
+  initialRedemptions,
+  initialPointHistory,
 }: {
   user: UserProfile | null;
   rewards: RewardItem[];
-  redemptions: RedemptionItem[];
-  pointHistory: PointTransactionItem[];
+  initialRedemptions: PaginatedResult<RedemptionItem>;
+  initialPointHistory: PaginatedResult<PointTransactionItem>;
 }) {
   const [selectedReward, setSelectedReward] = useState<RewardItem | null>(null);
   const [feedback, setFeedback] = useState<{
@@ -199,8 +200,8 @@ export function RewardsClient({
 
       {user && (
         <RewardHistoryPanels
-          redemptions={redemptions}
-          pointHistory={pointHistory}
+          initialRedemptions={initialRedemptions}
+          initialPointHistory={initialPointHistory}
         />
       )}
     </div>

@@ -469,3 +469,76 @@ export function validateRedemptionTransition(
   }
   return { ok: true };
 }
+
+export function validateThreadAuthorMutation(input: {
+  callerId: string;
+  callerRole: "student" | "admin";
+  threadAuthorId: string;
+  threadStatus: "open" | "solved" | "closed";
+  acceptedReplyId: string | null;
+  action: "edit" | "delete";
+}): RuleResult {
+  const isOwner = input.callerId === input.threadAuthorId;
+  const isAdmin = input.callerRole === "admin";
+  if (!isOwner && !isAdmin) {
+    return {
+      ok: false,
+      error: "Chỉ tác giả bài viết hoặc Admin mới có quyền thực hiện thao tác này.",
+      statusCode: 403,
+    };
+  }
+  if (!isAdmin && input.threadStatus === "closed") {
+    return {
+      ok: false,
+      error: "Chủ đề này đã bị đóng nên không thể chỉnh sửa hoặc xóa.",
+      statusCode: 400,
+    };
+  }
+  if (
+    input.action === "delete" &&
+    !isAdmin &&
+    (input.threadStatus === "solved" || input.acceptedReplyId !== null)
+  ) {
+    return {
+      ok: false,
+      error:
+        "Không thể tự xóa bài toán đã có lời giải đúng được cộng điểm. Vui lòng liên hệ Admin nếu cần hỗ trợ.",
+      statusCode: 409,
+    };
+  }
+  return { ok: true };
+}
+
+export function validateReplyAuthorMutation(input: {
+  callerId: string;
+  callerRole: "student" | "admin";
+  replyAuthorId: string;
+  isAccepted: boolean;
+  threadStatus: "open" | "solved" | "closed";
+}): RuleResult {
+  const isOwner = input.callerId === input.replyAuthorId;
+  const isAdmin = input.callerRole === "admin";
+  if (!isOwner && !isAdmin) {
+    return {
+      ok: false,
+      error: "Chỉ người viết bình luận hoặc Admin mới có quyền chỉnh sửa/xóa.",
+      statusCode: 403,
+    };
+  }
+  if (!isAdmin && input.isAccepted) {
+    return {
+      ok: false,
+      error:
+        "Lời giải này đã được chọn cộng điểm nên không thể tự sửa hoặc xóa.",
+      statusCode: 409,
+    };
+  }
+  if (!isAdmin && input.threadStatus === "closed") {
+    return {
+      ok: false,
+      error: "Chủ đề đã đóng, không thể chỉnh sửa hoặc xóa bình luận.",
+      statusCode: 400,
+    };
+  }
+  return { ok: true };
+}

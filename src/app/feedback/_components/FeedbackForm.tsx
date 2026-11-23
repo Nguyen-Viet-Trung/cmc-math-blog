@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Bug,
   ImagePlus,
@@ -62,6 +63,7 @@ const CATEGORY_BUTTONS: {
 
 export function FeedbackForm({ user }: { user: UserProfile | null }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [category, setCategory] = useState<FeedbackCategory>("bug");
   const [title, setTitle] = useState("");
   const [pageUrl, setPageUrl] = useState("");
@@ -149,6 +151,7 @@ export function FeedbackForm({ user }: { user: UserProfile | null }) {
       type: "success",
       text: "Cảm ơn bạn rất nhiều! Báo cáo / đề xuất của bạn đã được ghi nhận để Admin kiểm tra và cập nhật cho các phiên bản tiếp theo.",
     });
+    await queryClient.invalidateQueries({ queryKey: ["public-feedbacks"] });
     router.refresh();
   }
 

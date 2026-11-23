@@ -1,6 +1,8 @@
 import Link from "next/link";
 import {
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   CircleDot,
   FlaskConical,
   Image as ImageIcon,
@@ -11,18 +13,32 @@ import {
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
-import type { ThreadSummary } from "@/lib/types";
+import {
+  buildHomeFilterUrl,
+  formatRelativeDate,
+  getThreadTypeLabel,
+} from "@/lib/format";
+import type { ThreadSummary, ThreadType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface HomeThreadListProps {
   threads: ThreadSummary[];
   hasActiveFilter: boolean;
+  pagination?: {
+    page: number;
+    totalPages: number;
+    totalCount: number;
+    activeType: ThreadType | "all";
+    activeCat: string;
+    activeStatus: "all" | "open" | "solved";
+    searchQuery: string;
+  };
 }
 
 export function HomeThreadList({
   threads,
   hasActiveFilter,
+  pagination,
 }: HomeThreadListProps) {
   if (threads.length === 0) {
     return (
@@ -72,6 +88,7 @@ export function HomeThreadList({
   }
 
   return (
+    <div className="space-y-3">
     <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
       {threads.map((t) => {
         const typeLabel = getThreadTypeLabel(t.threadType);
@@ -192,6 +209,64 @@ export function HomeThreadList({
           </Link>
         );
       })}
+    </div>
+
+    {pagination && pagination.totalPages > 1 && (
+      <nav
+        aria-label="Phân trang bài viết"
+        className="flex items-center justify-between gap-3 pt-2 text-xs"
+      >
+        <span className="tabular-nums text-muted-foreground">
+          Trang {pagination.page} / {pagination.totalPages} (
+          {pagination.totalCount} bài)
+        </span>
+        <div className="flex items-center gap-2">
+          {pagination.page > 1 ? (
+            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+              <Link
+                href={buildHomeFilterUrl({
+                  type: pagination.activeType,
+                  cat: pagination.activeCat,
+                  status: pagination.activeStatus,
+                  q: pagination.searchQuery,
+                  page: pagination.page - 1,
+                })}
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+                Trang trước
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" disabled className="h-8 text-xs">
+              <ChevronLeft className="h-3.5 w-3.5" />
+              Trang trước
+            </Button>
+          )}
+
+          {pagination.page < pagination.totalPages ? (
+            <Button asChild variant="outline" size="sm" className="h-8 text-xs">
+              <Link
+                href={buildHomeFilterUrl({
+                  type: pagination.activeType,
+                  cat: pagination.activeCat,
+                  status: pagination.activeStatus,
+                  q: pagination.searchQuery,
+                  page: pagination.page + 1,
+                })}
+              >
+                Trang sau
+                <ChevronRight className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+          ) : (
+            <Button variant="outline" size="sm" disabled className="h-8 text-xs">
+              Trang sau
+              <ChevronRight className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </nav>
+    )}
     </div>
   );
 }

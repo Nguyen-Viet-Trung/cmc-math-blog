@@ -2,14 +2,17 @@
 
 import { useState } from "react";
 import dynamic from "next/dynamic";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock } from "lucide-react";
 import {
   CATEGORY_META,
   STATUS_META,
 } from "@/app/feedback/_components/feedback-meta";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import type { PaginatedResult } from "@/lib/pagination";
 import type { FeedbackCategory, FeedbackItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -23,22 +26,40 @@ const MathContent = dynamic(
 );
 
 export function FeedbackList({
-  initialItems,
+  initialFeedbacks,
 }: {
-  initialItems: FeedbackItem[];
+  initialFeedbacks: PaginatedResult<FeedbackItem>;
 }) {
   const [filterCat, setFilterCat] = useState<FeedbackCategory | "all">("all");
+  const [page, setPage] = useState(1);
 
-  const displayedItems =
-    filterCat === "all"
-      ? initialItems
-      : initialItems.filter((item) => item.category === filterCat);
+  const query = useQuery<PaginatedResult<FeedbackItem>>({
+    queryKey: ["public-feedbacks", filterCat, page],
+    queryFn: async () => {
+      const sp = new URLSearchParams({
+        page: String(page),
+        pageSize: String(initialFeedbacks.pageSize),
+        category: filterCat,
+      });
+      const res = await fetch(`/api/feedbacks?${sp.toString()}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("Không thể tải danh sách góp ý.");
+      return (await res.json()) as PaginatedResult<FeedbackItem>;
+    },
+    initialData:
+      filterCat === "all" && page === 1 ? initialFeedbacks : undefined,
+    placeholderData: keepPreviousData,
+    staleTime: 15_000,
+  });
+
+  const data = query.data ?? initialFeedbacks;
 
   return (
     <div className="space-y-4 lg:col-span-7">
       <Card className="flex flex-wrap items-center justify-between gap-2 p-4">
         <h2 className="text-sm font-bold text-foreground">
-          Nhật ký Tiếp nhận &amp; Cập nhật ({displayedItems.length})
+          Nhật ký Tiếp nhận &amp; Cập nhật ({data.totalCount})
         </h2>
 
         <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
@@ -46,7 +67,10 @@ export function FeedbackList({
             <button
               key={k}
               type="button"
-              onClick={() => setFilterCat(k)}
+              onClick={() => {
+                setFilterCat(k);
+                setPage(1);
+              }}
               className={cn(
                 "rounded-full px-2.5 py-1 transition",
                 filterCat === k
@@ -60,14 +84,14 @@ export function FeedbackList({
         </div>
       </Card>
 
-      {displayedItems.length === 0 ? (
+      {data.items.length === 0 ? (
         <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
           Chưa có mục góp ý nào trong danh sách này. Hãy đóng góp ý kiến đầu
           tiên giúp diễn đàn hoàn thiện hơn nhé!
         </Card>
       ) : (
         <div className="space-y-3">
-          {displayedItems.map((item) => {
+          {data.items.map((item) => {
             const catMeta = CATEGORY_META[item.category];
             const stMeta = STATUS_META[item.status];
 
@@ -116,6 +140,15 @@ export function FeedbackList({
               </Card>
             );
           })}
+
+          <PaginationBar
+            page={data.page}
+            totalPages={data.totalPages}
+            totalCount={data.totalCount}
+            itemLabel="mục"
+            isLoading={query.isFetching}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

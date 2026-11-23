@@ -53,12 +53,14 @@ export function buildHomeFilterUrl(params: {
   status?: string;
   type?: string;
   q?: string;
+  page?: number;
 }): string {
   const sp = new URLSearchParams();
   if (params.type && params.type !== "all") sp.set("type", params.type);
   if (params.cat) sp.set("cat", params.cat);
   if (params.status && params.status !== "all") sp.set("status", params.status);
   if (params.q?.trim()) sp.set("q", params.q.trim());
+  if (params.page && params.page > 1) sp.set("page", String(Math.floor(params.page)));
   const qs = sp.toString();
   return qs ? `/?${qs}` : "/";
 }

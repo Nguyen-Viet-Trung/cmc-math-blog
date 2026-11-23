@@ -3,14 +3,15 @@
 import { FeedbackForm } from "@/app/feedback/_components/FeedbackForm";
 import { FeedbackList } from "@/app/feedback/_components/FeedbackList";
 import { Badge } from "@/components/ui/badge";
+import type { PaginatedResult } from "@/lib/pagination";
 import type { FeedbackItem, UserProfile } from "@/lib/types";
 
 export function FeedbackClient({
   user,
-  initialItems,
+  initialFeedbacks,
 }: {
   user: UserProfile | null;
-  initialItems: FeedbackItem[];
+  initialFeedbacks: PaginatedResult<FeedbackItem>;
 }) {
   return (
     <div className="space-y-6">
@@ -27,7 +28,7 @@ export function FeedbackClient({
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         <FeedbackForm user={user} />
-        <FeedbackList initialItems={initialItems} />
+        <FeedbackList initialFeedbacks={initialFeedbacks} />
       </div>
     </div>
   );

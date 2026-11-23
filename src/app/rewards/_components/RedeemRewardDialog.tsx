@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { redeemRewardAction } from "@/app/actions/rewards";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,7 @@ export function RedeemRewardDialog({
   onFeedback,
 }: RedeemRewardDialogProps) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [studentNote, setStudentNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -55,6 +57,10 @@ export function RedeemRewardDialog({
       type: "success",
       text: res.message || "Đổi quà thành công!",
     });
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["my-redemptions"] }),
+      queryClient.invalidateQueries({ queryKey: ["my-points-history"] }),
+    ]);
     router.refresh();
   }
 

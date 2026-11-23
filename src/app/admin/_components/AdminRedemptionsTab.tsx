@@ -1,13 +1,26 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Clock, Loader2, PackageCheck, XCircle } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  CheckCircle2,
+  Clock,
+  Loader2,
+  PackageCheck,
+  XCircle,
+} from "lucide-react";
 import { reviewRedemptionAction } from "@/app/actions/admin";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import {
+  useAdminPaginatedList,
+  useDebouncedValue,
+} from "@/hooks/useAdminPaginatedList";
+import type { PaginatedResult } from "@/lib/pagination";
 import type { RedemptionItem } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
@@ -24,48 +37,29 @@ const STATUS_META: Record<
 };
 
 export function AdminRedemptionsTab({
-  redemptions,
+  initialRedemptions,
   onNotice,
 }: {
-  redemptions: RedemptionItem[];
+  initialRedemptions: PaginatedResult<RedemptionItem>;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [page, setPage] = useState(1);
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const counts = useMemo(
-    () => ({
-      all: redemptions.length,
-      pending: redemptions.filter((r) => r.status === "pending").length,
-      approved: redemptions.filter((r) => r.status === "approved").length,
-      fulfilled: redemptions.filter((r) => r.status === "fulfilled").length,
-      rejected: redemptions.filter((r) => r.status === "rejected").length,
-    }),
-    [redemptions]
-  );
-
-  const filteredRedemptions = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return redemptions.filter((rd) => {
-      if (statusFilter !== "all" && rd.status !== statusFilter) return false;
-      if (q) {
-        const hay = [
-          rd.userDisplayName,
-          rd.userEmail,
-          rd.rewardName,
-          rd.studentNote,
-          rd.adminNote,
-        ]
-          .join(" ")
-          .toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
-  }, [redemptions, statusFilter, search]);
+  const debouncedSearch = useDebouncedValue(search, 250);
+  const { data, isFetching } = useAdminPaginatedList({
+    resource: "redemptions",
+    page,
+    pageSize: initialRedemptions.pageSize,
+    query: debouncedSearch,
+    status: statusFilter,
+    initialData: initialRedemptions,
+  });
 
   async function handleReview(
     rd: RedemptionItem,
@@ -104,6 +98,9 @@ export function AdminRedemptionsTab({
             ? `Đã đánh dấu hoàn thành trao "${rd.rewardName}" cho ${rd.userDisplayName}!`
             : "Đã duyệt đơn đổi quà!",
     });
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-list", "redemptions"],
+    });
     router.refresh();
   }
 
@@ -113,7 +110,10 @@ export function AdminRedemptionsTab({
         <Input
           type="text"
           value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setPage(1);
+          }}
           placeholder="Tìm theo tên/email học sinh, tên quà hoặc ghi chú..."
           className="sm:max-w-sm"
         />
@@ -121,11 +121,11 @@ export function AdminRedemptionsTab({
         <div className="flex flex-wrap gap-1.5">
           {(
             [
-              { id: "all", label: `Tất cả (${counts.all})` },
-              { id: "pending", label: `Chờ duyệt (${counts.pending})` },
-              { id: "approved", label: `Đã duyệt (${counts.approved})` },
-              { id: "fulfilled", label: `Đã trao (${counts.fulfilled})` },
-              { id: "rejected", label: `Từ chối (${counts.rejected})` },
+              { id: "all", label: "Tất cả" },
+              { id: "pending", label: "Chờ duyệt" },
+              { id: "approved", label: "Đã duyệt" },
+              { id: "fulfilled", label: "Đã trao" },
+              { id: "rejected", label: "Từ chối" },
             ] as const
           ).map((f) => (
             <Button
@@ -133,8 +133,11 @@ export function AdminRedemptionsTab({
               type="button"
               size="sm"
               variant={statusFilter === f.id ? "default" : "outline"}
-              onClick={() => setStatusFilter(f.id)}
-              className="h-8 text-xs tabular-nums"
+              onClick={() => {
+                setStatusFilter(f.id);
+                setPage(1);
+              }}
+              className="h-8 text-xs"
             >
               {f.label}
             </Button>
@@ -142,15 +145,15 @@ export function AdminRedemptionsTab({
         </div>
       </Card>
 
-      {filteredRedemptions.length === 0 ? (
+      {data.items.length === 0 ? (
         <Card className="border-dashed p-8 text-center text-sm text-muted-foreground">
-          {redemptions.length === 0
+          {initialRedemptions.totalCount === 0
             ? "Chưa có đơn yêu cầu đổi quà nào từ học sinh."
             : "Không có đơn đổi quà nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
         <div className="space-y-3">
-          {filteredRedemptions.map((rd) => {
+          {data.items.map((rd) => {
             const meta = STATUS_META[rd.status];
             const isBusy = busyId === rd.id;
             const isFinal =
@@ -258,6 +261,15 @@ export function AdminRedemptionsTab({
               </Card>
             );
           })}
+
+          <PaginationBar
+            page={data.page}
+            totalPages={data.totalPages}
+            totalCount={data.totalCount}
+            itemLabel="đơn đổi quà"
+            isLoading={isFetching}
+            onPageChange={setPage}
+          />
         </div>
       )}
     </div>

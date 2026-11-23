@@ -39,7 +39,7 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
     e.preventDefault();
     if (!isConfigured) {
       setError(
-        "Chưa cấu hình khóa Supabase trong key.txt. Hãy điền key và chạy `npm run setup` trước nhé!"
+        "Hệ thống đang bảo trì kết nối máy chủ. Vui lòng thử lại sau."
       );
       return;
     }
@@ -183,6 +183,12 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
             onChange={(e) => setPassword(e.target.value)}
             placeholder="••••••••"
           />
+          {mode === "login" && (
+            <p className="text-[11px] text-muted-foreground">
+              Quên mật khẩu? Hãy liên hệ Ban Quản Trị CLB để được cấp lại mật
+              khẩu mới.
+            </p>
+          )}
         </div>
 
         {error && (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, Award } from "lucide-react";
 import {
@@ -8,10 +8,12 @@ import {
   revokeAcceptedReplyAction,
 } from "@/app/actions/admin";
 import { AdminReplyAuditCard } from "@/app/admin/_components/AdminReplyAuditCard";
+import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { paginateSlice } from "@/lib/pagination";
 import type {
   AdminReplyAuditItem,
   BuffPairSummary,
@@ -45,6 +47,11 @@ export function AdminRepliesAuditTab({
   } | null>(null);
   const [reasons, setReasons] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    setPage(1);
+  }, [replyFilter, search, selectedPair]);
 
   const acceptedCount = useMemo(
     () => replies.filter((r) => r.isAccepted).length,
@@ -282,20 +289,34 @@ export function AdminRepliesAuditTab({
             : "Không có bình luận nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
-        <div className="space-y-3">
-          {filteredReplies.map((r) => (
-            <AdminReplyAuditCard
-              key={r.id}
-              reply={r}
-              flags={flagsByReplyId[r.id] ?? []}
-              reason={reasons[r.id] ?? ""}
-              isBusy={busyId === r.id}
-              onReasonChange={(val) => setReasons({ ...reasons, [r.id]: val })}
-              onRevoke={() => void handleRevoke(r)}
-              onDelete={() => void handleDelete(r)}
-            />
-          ))}
-        </div>
+        (() => {
+          const paged = paginateSlice(filteredReplies, page, 10);
+          return (
+            <div className="space-y-3">
+              {paged.items.map((r) => (
+                <AdminReplyAuditCard
+                  key={r.id}
+                  reply={r}
+                  flags={flagsByReplyId[r.id] ?? []}
+                  reason={reasons[r.id] ?? ""}
+                  isBusy={busyId === r.id}
+                  onReasonChange={(val) =>
+                    setReasons({ ...reasons, [r.id]: val })
+                  }
+                  onRevoke={() => void handleRevoke(r)}
+                  onDelete={() => void handleDelete(r)}
+                />
+              ))}
+              <PaginationBar
+                page={paged.page}
+                totalPages={paged.totalPages}
+                totalCount={paged.totalCount}
+                itemLabel="bình luận"
+                onPageChange={setPage}
+              />
+            </div>
+          );
+        })()
       )}
     </div>
   );

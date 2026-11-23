@@ -8,7 +8,9 @@ import {
   validateAcceptAnswer,
   validateNickname,
   validateRedemptionTransition,
+  validateReplyAuthorMutation,
   validateRewardRedemption,
+  validateThreadAuthorMutation,
   validateThreadAuthorReward,
   validateUploadPayload,
 } from "../rules";
@@ -343,5 +345,74 @@ describe("validateRedemptionTransition — kiểm soát trạng thái xử lý �
     expect(validateRedemptionTransition("fulfilled", "approved").ok).toBe(false);
     expect(validateRedemptionTransition("rejected", "fulfilled").ok).toBe(false);
     expect(validateRedemptionTransition("approved", "approved").ok).toBe(false);
+  });
+});
+
+describe("validateThreadAuthorMutation & validateReplyAuthorMutation — quyền tự sửa/xóa bài & bình luận", () => {
+  it("cho phép tác giả sửa/xóa bài open của chính mình nhưng chặn tự xóa bài đã giải", () => {
+    expect(
+      validateThreadAuthorMutation({
+        callerId: "u1",
+        callerRole: "student",
+        threadAuthorId: "u1",
+        threadStatus: "open",
+        acceptedReplyId: null,
+        action: "edit",
+      })
+    ).toEqual({ ok: true });
+
+    expect(
+      validateThreadAuthorMutation({
+        callerId: "u1",
+        callerRole: "student",
+        threadAuthorId: "u1",
+        threadStatus: "solved",
+        acceptedReplyId: "r1",
+        action: "delete",
+      }).ok
+    ).toBe(false);
+
+    expect(
+      validateThreadAuthorMutation({
+        callerId: "u2",
+        callerRole: "student",
+        threadAuthorId: "u1",
+        threadStatus: "open",
+        acceptedReplyId: null,
+        action: "edit",
+      }).ok
+    ).toBe(false);
+  });
+
+  it("chặn học sinh sửa/xóa bình luận đã được chọn cộng điểm hoặc trong chủ đề đã đóng", () => {
+    expect(
+      validateReplyAuthorMutation({
+        callerId: "u1",
+        callerRole: "student",
+        replyAuthorId: "u1",
+        isAccepted: false,
+        threadStatus: "open",
+      })
+    ).toEqual({ ok: true });
+
+    expect(
+      validateReplyAuthorMutation({
+        callerId: "u1",
+        callerRole: "student",
+        replyAuthorId: "u1",
+        isAccepted: true,
+        threadStatus: "solved",
+      }).ok
+    ).toBe(false);
+
+    expect(
+      validateReplyAuthorMutation({
+        callerId: "u1",
+        callerRole: "student",
+        replyAuthorId: "u1",
+        isAccepted: false,
+        threadStatus: "closed",
+      }).ok
+    ).toBe(false);
   });
 });

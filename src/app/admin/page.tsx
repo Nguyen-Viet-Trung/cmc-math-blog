@@ -1,17 +1,20 @@
 import Link from "next/link";
 import { ShieldAlert } from "lucide-react";
-import { listAllFeedbacksForAdmin } from "@/app/actions/feedback";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import {
+  getAdminDashboardCounts,
+  listAdminFeedbacksPaginated,
+  listAdminRedemptionsPaginated,
+  listAdminRewardsPaginated,
+  listAdminStudentsPaginated,
+  listAdminThreadsPaginated,
+} from "@/lib/admin-list-service";
 import { isDatabaseConfigured } from "@/lib/env";
 import {
   getCurrentUserProfile,
   getSiteSettings,
-  listAllRedemptionsForAdmin,
   listAllRepliesForAdmin,
-  listAllRewardsForAdmin,
-  listAllStudentsForAdmin,
-  listAllThreadsForAdmin,
 } from "@/lib/forum-service";
 import { AdminDashboardClient } from "./AdminDashboardClient";
 
@@ -27,12 +30,9 @@ export default async function AdminPortalPage() {
           Khu vực dành riêng cho Quản trị viên (Admin Portal)
         </h1>
         <p className="text-xs leading-relaxed text-muted-foreground">
-          Hãy đăng nhập bằng tài khoản email trùng với cấu hình{" "}
-          <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-foreground">
-            ADMIN_EMAIL
-          </code>{" "}
-          trong file <code className="font-mono text-foreground">key.txt</code>{" "}
-          để được hệ thống tự động cấp quyền Admin.
+          Trang này chỉ dành cho tài khoản Ban Quản Trị câu lạc bộ. Vui lòng
+          đăng nhập bằng tài khoản Quản trị viên hoặc liên hệ Ban Chủ Nhiệm nếu
+          bạn cần được cấp quyền truy cập.
         </p>
         <div className="pt-1">
           <Button asChild size="sm">
@@ -43,27 +43,37 @@ export default async function AdminPortalPage() {
     );
   }
 
-  const [settings, rewards, redemptions, students, feedbacks, replies, threads] =
-    await Promise.all([
-      getSiteSettings(),
-      listAllRewardsForAdmin(),
-      listAllRedemptionsForAdmin(),
-      listAllStudentsForAdmin(),
-      listAllFeedbacksForAdmin(),
-      listAllRepliesForAdmin(200),
-      listAllThreadsForAdmin(150),
-    ]);
+  const [
+    settings,
+    counts,
+    initialRewards,
+    initialRedemptions,
+    initialStudents,
+    initialFeedbacks,
+    initialThreads,
+    replies,
+  ] = await Promise.all([
+    getSiteSettings(),
+    getAdminDashboardCounts(),
+    listAdminRewardsPaginated({ page: 1, pageSize: 8 }),
+    listAdminRedemptionsPaginated({ page: 1, pageSize: 10 }),
+    listAdminStudentsPaginated({ page: 1, pageSize: 15 }),
+    listAdminFeedbacksPaginated({ page: 1, pageSize: 10 }),
+    listAdminThreadsPaginated({ page: 1, pageSize: 12 }),
+    listAllRepliesForAdmin(200),
+  ]);
 
   return (
     <AdminDashboardClient
       isDemo={!dbReady}
       settings={settings}
-      rewards={rewards}
-      redemptions={redemptions}
-      students={students}
-      feedbacks={feedbacks}
+      counts={counts}
+      initialRewards={initialRewards}
+      initialRedemptions={initialRedemptions}
+      initialStudents={initialStudents}
+      initialFeedbacks={initialFeedbacks}
+      initialThreads={initialThreads}
       replies={replies}
-      threads={threads}
     />
   );
 }

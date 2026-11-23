@@ -232,8 +232,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
 
-        <footer className="mt-8 border-t border-border py-3.5">
-          <div className="mx-auto flex max-w-[1220px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:px-6 lg:px-8">
+        <footer className="mt-8 flex min-h-[60px] items-center border-t border-border py-2 lg:h-[60px] lg:py-0">
+          <div className="mx-auto flex w-full max-w-[1220px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:px-6 lg:px-8">
             <span className="font-medium text-foreground/80">
               {siteName} · CMA MATHS CLUB blog
             </span>

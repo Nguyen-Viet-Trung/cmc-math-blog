@@ -5,6 +5,7 @@ import {
   normalizeNickname,
   normalizeThreadType,
   parseClubJoinedDate,
+  sanitizeRedirectPath,
   validateAcceptAnswer,
   validateNickname,
   validateRedemptionTransition,
@@ -414,5 +415,17 @@ describe("validateThreadAuthorMutation & validateReplyAuthorMutation — quyền
         threadStatus: "closed",
       }).ok
     ).toBe(false);
+  });
+});
+
+describe("sanitizeRedirectPath — chống Open Redirect trên /auth/callback", () => {
+  it("chỉ chấp nhận đường dẫn nội bộ hợp lệ và chặn URL bên ngoài", () => {
+    expect(sanitizeRedirectPath("/profile")).toBe("/profile");
+    expect(sanitizeRedirectPath("/threads/123?tab=1")).toBe("/threads/123?tab=1");
+    expect(sanitizeRedirectPath(null)).toBe("/");
+    expect(sanitizeRedirectPath("//evil.com")).toBe("/");
+    expect(sanitizeRedirectPath("/\\evil.com")).toBe("/");
+    expect(sanitizeRedirectPath("https://evil.com")).toBe("/");
+    expect(sanitizeRedirectPath("/ok\r\nSet-Cookie: x=1")).toBe("/");
   });
 });

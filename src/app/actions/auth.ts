@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
@@ -10,6 +11,7 @@ import {
   isSupabaseStorageConfigured,
 } from "@/lib/env";
 import { getCurrentUserProfile } from "@/lib/forum-service";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { normalizeNickname, validateNickname } from "@/lib/rules";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -46,6 +48,22 @@ export async function registerStudentAction(input: {
   }
 
   try {
+    const reqHeaders = await headers();
+    const clientIp =
+      reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      reqHeaders.get("x-real-ip")?.trim() ||
+      "unknown";
+    const rate = checkRateLimit(`register:${clientIp}`, {
+      maxRequests: 5,
+      windowMs: 15 * 60 * 1000,
+    });
+    if (!rate.allowed) {
+      return {
+        ok: false,
+        error: `Bạn thao tác đăng ký quá nhiều lần. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+      };
+    }
+
     const supabaseAdmin = createSupabaseAdminClient();
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,

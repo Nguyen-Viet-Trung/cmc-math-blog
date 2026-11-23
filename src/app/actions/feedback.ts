@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { headers } from "next/headers";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -10,6 +11,8 @@ import {
   normalizePagination,
   type PaginatedResult,
 } from "@/lib/pagination";
+import { checkRateLimit } from "@/lib/rate-limit";
+import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
 import type {
   FeedbackCategory,
   FeedbackItem,
@@ -181,6 +184,22 @@ export async function submitFeedbackAction(input: {
       return { ok: false, error: "Tài khoản của bạn đang bị khóa." };
     }
 
+    const reqHeaders = await headers();
+    const clientIp =
+      reqHeaders.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+      reqHeaders.get("x-real-ip")?.trim() ||
+      "anonymous";
+    const rate = checkRateLimit(`feedback:${user?.id ?? clientIp}`, {
+      maxRequests: 5,
+      windowMs: 10 * 60 * 1000,
+    });
+    if (!rate.allowed) {
+      return {
+        ok: false,
+        error: `Bạn gửi góp ý quá nhanh. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+      };
+    }
+
     const contactName = user
       ? user.displayName
       : (input.contactName?.trim().slice(0, 60) || "Học sinh");
@@ -271,7 +290,15 @@ export async function deleteFeedbackByAdminAction(
 
   try {
     const sql = getSql();
+    const rows = await sql`
+      SELECT image_urls FROM public.feedbacks WHERE id = ${feedbackId} LIMIT 1
+    `;
+    const orphanUrls =
+      rows.length > 0 && Array.isArray(rows[0].image_urls)
+        ? (rows[0].image_urls as string[])
+        : [];
     await sql`DELETE FROM public.feedbacks WHERE id = ${feedbackId}`;
+    void deleteStorageImagesByUrls(orphanUrls);
     revalidateTag(CACHE_TAGS.feedbacks);
     revalidatePath("/feedback");
     revalidatePath("/admin");

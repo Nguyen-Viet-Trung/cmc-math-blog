@@ -542,3 +542,21 @@ export function validateReplyAuthorMutation(input: {
   }
   return { ok: true };
 }
+
+/**
+ * Ngăn chặn lỗ hổng Open Redirect (ví dụ `//evil.com`, `/\evil.com`, `https://evil.com`).
+ * Chỉ cho phép đường dẫn nội bộ tương đối bắt đầu bằng đúng một dấu `/`.
+ */
+export function sanitizeRedirectPath(raw: string | null | undefined): string {
+  if (!raw) return "/";
+  const trimmed = raw.trim();
+  if (
+    !trimmed.startsWith("/") ||
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("/\\") ||
+    /[\r\n]/.test(trimmed)
+  ) {
+    return "/";
+  }
+  return trimmed;
+}

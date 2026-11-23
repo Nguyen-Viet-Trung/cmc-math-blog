@@ -8,7 +8,7 @@ import {
 export function createSupabaseAdminClient() {
   if (!isSupabaseStorageConfigured()) {
     throw new Error(
-      "Chưa cấu hình SUPABASE_SECRET_KEY trong key.txt. Vui lòng bổ sung và chạy `npm run setup`."
+      "Dịch vụ xác thực và lưu trữ hiện chưa sẵn sàng. Vui lòng thử lại sau."
     );
   }
 

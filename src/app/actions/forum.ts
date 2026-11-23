@@ -279,6 +279,9 @@ export async function toggleUpvoteReplyAction(
   if (!user) {
     return { ok: false, error: "Vui lòng đăng nhập để bấm cảm ơn lời giải." };
   }
+  if (user.isBanned) {
+    return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
+  }
 
   try {
     const sql = getSql();

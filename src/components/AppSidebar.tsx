@@ -132,29 +132,34 @@ export function AppSidebar({
         )}
       </div>
 
-      {/* Sidebar Footer: Single Source of Truth cho tài khoản trên Desktop */}
-      <div className="shrink-0 border-t border-border p-2.5">
+      {/* Sidebar Footer: Khớp chiều cao h-[60px] + border-t với Footer cột phải */}
+      <div
+        className={cn(
+          "flex h-[60px] shrink-0 items-center border-t border-border",
+          collapsed ? "justify-center px-1.5" : "px-2.5"
+        )}
+      >
         {isLoadingSession ? (
           <Skeleton
             className={cn(
               "rounded-md",
-              collapsed ? "mx-auto h-8 w-8" : "h-10 w-full"
+              collapsed ? "mx-auto h-8 w-8" : "h-9 w-full"
             )}
           />
         ) : user ? (
           collapsed ? (
-            <div className="flex flex-col items-center gap-1.5">
+            <div className="flex items-center gap-1">
               <Link
                 href="/profile"
                 prefetch={true}
                 title={`${user.displayName} (${user.pointsBalance} điểm)`}
               >
-                <Avatar className="h-8 w-8">
+                <Avatar className="h-7 w-7">
                   <AvatarImage
                     src={user.avatarUrl ?? undefined}
                     alt={user.displayName}
                   />
-                  <AvatarFallback className="text-xs">
+                  <AvatarFallback className="text-[11px]">
                     {user.displayName.slice(0, 1).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
@@ -166,13 +171,13 @@ export function AppSidebar({
                 onClick={() => void onSignOut()}
                 title="Đăng xuất"
                 aria-label="Đăng xuất"
-                className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                className="h-6 w-6 text-muted-foreground hover:text-destructive"
               >
                 <LogOut className="h-3.5 w-3.5" />
               </Button>
             </div>
           ) : (
-            <div className="flex items-center gap-1.5">
+            <div className="flex w-full items-center gap-1.5">
               <Link
                 href="/profile"
                 prefetch={true}

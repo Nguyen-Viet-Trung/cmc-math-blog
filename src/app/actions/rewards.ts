@@ -15,7 +15,7 @@ export async function redeemRewardAction(input: {
   if (!isDatabaseConfigured()) {
     return {
       ok: false,
-      error: "Đang ở chế độ xem trước. Vui lòng kết nối Supabase để sử dụng cửa hàng đổi quà.",
+      error: "Hệ thống đang bảo trì kết nối cơ sở dữ liệu. Vui lòng thử lại sau.",
     };
   }
 

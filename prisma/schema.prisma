@@ -1,0 +1,188 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model categories {
+  id          Int       @id @default(autoincrement())
+  slug        String    @unique
+  name        String
+  description String    @default("")
+  color       String    @default("blue")
+  sort_order  Int       @default(0)
+  threads     threads[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model point_transactions {
+  id                                               String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id                                          String    @db.Uuid
+  amount                                           Int
+  type                                             String
+  reason                                           String
+  reference_id                                     String?   @db.Uuid
+  created_by                                       String?   @db.Uuid
+  created_at                                       DateTime  @default(now()) @db.Timestamptz(6)
+  profiles_point_transactions_created_byToprofiles profiles? @relation("point_transactions_created_byToprofiles", fields: [created_by], references: [id], onUpdate: NoAction)
+  profiles_point_transactions_user_idToprofiles    profiles  @relation("point_transactions_user_idToprofiles", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, created_at(sort: Desc)], map: "idx_point_tx_user_created")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model profiles {
+  id                                                         String               @id @db.Uuid
+  email                                                      String               @unique
+  display_name                                               String
+  nickname                                                   String               @default("")
+  avatar_url                                                 String?
+  bio                                                        String               @default("")
+  grade_level                                                String               @default("THPT")
+  role                                                       String               @default("student")
+  points_balance                                             Int                  @default(0)
+  total_earned_points                                        Int                  @default(0)
+  solved_count                                               Int                  @default(0)
+  is_banned                                                  Boolean              @default(false)
+  joined_at                                                  DateTime             @default(now()) @db.Timestamptz(6)
+  created_at                                                 DateTime             @default(now()) @db.Timestamptz(6)
+  updated_at                                                 DateTime             @default(now()) @db.Timestamptz(6)
+  feedbacks                                                  feedbacks[]
+  point_transactions_point_transactions_created_byToprofiles point_transactions[] @relation("point_transactions_created_byToprofiles")
+  point_transactions_point_transactions_user_idToprofiles    point_transactions[] @relation("point_transactions_user_idToprofiles")
+  redemptions                                                redemptions[]
+  replies                                                    replies[]
+  reply_upvotes                                              reply_upvotes[]
+  threads                                                    threads[]
+
+  @@index([total_earned_points(sort: Desc), solved_count(sort: Desc)], map: "idx_profiles_leaderboard")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model redemptions {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id      String   @db.Uuid
+  reward_id    String   @db.Uuid
+  points_spent Int
+  student_note String   @default("")
+  admin_note   String   @default("")
+  status       String   @default("pending")
+  created_at   DateTime @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime @default(now()) @db.Timestamptz(6)
+  rewards      rewards  @relation(fields: [reward_id], references: [id], onUpdate: NoAction)
+  profiles     profiles @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([status, created_at(sort: Desc)], map: "idx_redemptions_status_created")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model replies {
+  id            String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  thread_id     String          @db.Uuid
+  author_id     String          @db.Uuid
+  content       String
+  image_urls    String[]        @default([])
+  is_accepted   Boolean         @default(false)
+  upvotes_count Int             @default(0)
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  profiles      profiles        @relation(fields: [author_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  threads       threads         @relation(fields: [thread_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  reply_upvotes reply_upvotes[]
+
+  @@index([thread_id, created_at], map: "idx_replies_thread_created")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model reply_upvotes {
+  reply_id   String   @db.Uuid
+  user_id    String   @db.Uuid
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  replies    replies  @relation(fields: [reply_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  profiles   profiles @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([reply_id, user_id])
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model rewards {
+  id          String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  description String        @default("")
+  image_url   String?
+  points_cost Int
+  stock       Int           @default(0)
+  is_active   Boolean       @default(true)
+  created_at  DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at  DateTime      @default(now()) @db.Timestamptz(6)
+  redemptions redemptions[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model site_settings {
+  id                    Int      @id @default(1)
+  site_name             String   @default("CMC")
+  default_solved_points Int      @default(10)
+  announcement          String   @default("Chào mừng các bạn học sinh! Hãy đặt câu hỏi rõ ràng (hỗ trợ gõ công thức LaTeX hoặc đính kèm ảnh chụp đề) và giải bài giúp bạn bè để tích điểm đổi quà nhé.")
+  updated_at            DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model threads {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  author_id         String     @db.Uuid
+  category_id       Int
+  title             String
+  content           String
+  image_urls        String[]   @default([])
+  grade_tag            String     @default("Chung")
+  thread_type          String     @default("question")
+  bounty_points        Int        @default(10)
+  author_reward_points Int        @default(0)
+  status               String     @default("open")
+  accepted_reply_id String?    @db.Uuid
+  is_pinned         Boolean    @default(false)
+  view_count        Int        @default(0)
+  reply_count       Int        @default(0)
+  created_at        DateTime   @default(now()) @db.Timestamptz(6)
+  updated_at        DateTime   @default(now()) @db.Timestamptz(6)
+  replies           replies[]
+  profiles          profiles   @relation(fields: [author_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  categories        categories @relation(fields: [category_id], references: [id], onUpdate: NoAction)
+
+  @@index([category_id, created_at(sort: Desc)], map: "idx_threads_category_created")
+  @@index([status, created_at(sort: Desc)], map: "idx_threads_status_created")
+  @@index([thread_type, created_at(sort: Desc)], map: "idx_threads_type_created")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model feedbacks {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  user_id       String?   @db.Uuid
+  category      String    @default("bug")
+  title         String
+  description   String
+  page_url      String    @default("")
+  image_urls    String[]  @default([])
+  contact_name  String    @default("")
+  contact_email String    @default("")
+  status        String    @default("open")
+  admin_reply   String    @default("")
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime  @default(now()) @db.Timestamptz(6)
+  profiles      profiles? @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([status, created_at(sort: Desc)], map: "idx_feedbacks_status_created")
+}

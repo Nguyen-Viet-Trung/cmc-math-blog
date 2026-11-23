@@ -1,0 +1,214 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /**
+   * CMC — CMA MATHS CLUB blog Design System Tokens
+   * Light: Warm academic ivory canvas + crisp white surfaces + CMC Navy (#1B3A6B)
+   * Dark: Deep carbon-slate canvas (#0B0E14) + elevated surface (#111620) + luminous blue (#5B9BF8)
+   */
+  :root {
+    --background: 40 18% 97%;
+    --foreground: 218 32% 13%;
+    --card: 0 0% 100%;
+    --card-foreground: 218 32% 13%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 218 32% 13%;
+    --primary: 217 60% 26%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 40 14% 93%;
+    --secondary-foreground: 218 28% 18%;
+    --muted: 40 14% 94%;
+    --muted-foreground: 215 14% 42%;
+    --accent: 217 40% 95%;
+    --accent-foreground: 217 60% 26%;
+    --destructive: 348 78% 44%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 40 12% 88%;
+    --input: 40 12% 82%;
+    --ring: 217 60% 26%;
+    --radius: 0.5rem;
+
+    /* Semantic forum tokens */
+    --bounty: 32 90% 38%;
+    --bounty-surface: 44 85% 94%;
+    --bounty-border: 42 75% 74%;
+    --bounty-foreground: 28 84% 28%;
+
+    --success: 145 66% 31%;
+    --success-surface: 145 55% 95%;
+    --success-border: 148 45% 80%;
+    --success-foreground: 146 60% 22%;
+  }
+
+  .dark {
+    --background: 222 28% 7%;
+    --foreground: 213 24% 92%;
+    --card: 222 25% 10%;
+    --card-foreground: 213 24% 92%;
+    --popover: 222 25% 11%;
+    --popover-foreground: 213 24% 92%;
+    --primary: 214 88% 65%;
+    --primary-foreground: 222 40% 9%;
+    --secondary: 220 20% 15%;
+    --secondary-foreground: 213 24% 90%;
+    --muted: 222 20% 14%;
+    --muted-foreground: 215 14% 60%;
+    --accent: 218 28% 16%;
+    --accent-foreground: 214 88% 76%;
+    --destructive: 350 75% 58%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 18% 18%;
+    --input: 220 18% 22%;
+    --ring: 214 88% 65%;
+
+    --bounty: 38 88% 60%;
+    --bounty-surface: 36 38% 14%;
+    --bounty-border: 36 42% 26%;
+    --bounty-foreground: 40 90% 72%;
+
+    --success: 145 62% 52%;
+    --success-surface: 150 32% 13%;
+    --success-border: 150 32% 24%;
+    --success-foreground: 145 68% 72%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Reusable typography scale */
+@layer components {
+  .heading-1 {
+    @apply text-xl sm:text-2xl font-bold tracking-[-0.02em] leading-[1.28] text-foreground;
+  }
+
+  .heading-2 {
+    @apply text-lg sm:text-[1.2rem] font-semibold tracking-[-0.015em] leading-[1.32] text-foreground;
+  }
+
+  .heading-3 {
+    @apply text-[0.95rem] sm:text-base font-semibold tracking-[-0.01em] leading-[1.4] text-foreground;
+  }
+
+  .heading-4 {
+    @apply text-[0.875rem] font-semibold leading-[1.4] text-foreground;
+  }
+
+  .section-label {
+    @apply text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground;
+  }
+}
+
+/* KaTeX typography & mobile horizontal scroll protection */
+.katex {
+  font-size: 1.05em;
+  line-height: 1.25;
+}
+
+.katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5rem 0.25rem;
+  margin: 0.85rem 0;
+}
+
+.math-prose {
+  font-size: 0.9375rem;
+  line-height: 1.72;
+  color: hsl(var(--foreground));
+}
+
+.math-prose p {
+  margin-top: 0;
+  margin-bottom: 0.85rem;
+}
+
+.math-prose p:last-child {
+  margin-bottom: 0;
+}
+
+.math-prose ul,
+.math-prose ol {
+  margin: 0.65rem 0 0.85rem 1.35rem;
+}
+
+.math-prose ul {
+  list-style-type: disc;
+}
+
+.math-prose ol {
+  list-style-type: decimal;
+}
+
+.math-prose li {
+  margin-bottom: 0.3rem;
+}
+
+.math-prose a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.math-prose pre {
+  background-color: hsl(222 28% 10%);
+  color: hsl(210 30% 94%);
+  border: 1px solid hsl(var(--border));
+  padding: 0.85rem 1rem;
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 0.85rem;
+  margin: 0.85rem 0;
+}
+
+.math-prose code:not(pre code) {
+  background-color: hsl(var(--muted));
+  color: hsl(var(--primary));
+  padding: 0.125rem 0.35rem;
+  border-radius: 4px;
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 0.86em;
+}
+
+.math-prose blockquote {
+  border-left: 2px solid hsl(var(--primary));
+  margin: 0.85rem 0;
+  padding: 0.35rem 0.75rem 0.35rem 1rem;
+  color: hsl(var(--muted-foreground));
+  background-color: hsl(var(--muted) / 0.5);
+  border-radius: 0 6px 6px 0;
+}
+
+.math-prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.85rem 0;
+  font-size: 0.875rem;
+}
+
+.math-prose th,
+.math-prose td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.45rem 0.75rem;
+  text-align: left;
+}
+
+.math-prose th {
+  background-color: hsl(var(--muted));
+  font-weight: 600;
+}

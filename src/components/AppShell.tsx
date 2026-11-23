@@ -1,0 +1,255 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import {
+  Award,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Sigma,
+} from "lucide-react";
+import { AppMobileDrawer } from "@/components/AppMobileDrawer";
+import { AppSidebar } from "@/components/AppSidebar";
+import { SetupBanner } from "@/components/SetupBanner";
+import { ThemeToggle } from "@/components/ThemeToggle";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { useAppSession } from "@/hooks/useAppSession";
+import { getRoutePageTitle, SIDEBAR_STORAGE_KEY } from "@/lib/navigation";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+
+export function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { siteName, user, isDemoMode, isLoadingSession, refreshSession } =
+    useAppSession();
+
+  const [pendingHref, setPendingHref] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(SIDEBAR_STORAGE_KEY) === "1") {
+        setCollapsed(true);
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  useEffect(() => {
+    setPendingHref(null);
+    setDrawerOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    function handleDocumentClick(e: MouseEvent) {
+      if (
+        e.defaultPrevented ||
+        e.button !== 0 ||
+        e.metaKey ||
+        e.ctrlKey ||
+        e.shiftKey
+      ) {
+        return;
+      }
+      const anchor = (e.target as HTMLElement | null)?.closest("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href || !href.startsWith("/") || href.startsWith("//")) return;
+      const targetPath = href.split("?")[0].split("#")[0];
+      const currentFull = window.location.pathname + window.location.search;
+      if (href !== currentFull && targetPath !== pathname) {
+        setPendingHref(targetPath);
+      }
+    }
+    document.addEventListener("click", handleDocumentClick);
+    return () => document.removeEventListener("click", handleDocumentClick);
+  }, [pathname]);
+
+  function toggleSidebarCollapse() {
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        window.localStorage.setItem(SIDEBAR_STORAGE_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }
+
+  const effectivePath = pendingHref ?? pathname;
+  const pageTitle = getRoutePageTitle(effectivePath);
+
+  async function handleSignOut() {
+    try {
+      const supabase = createSupabaseBrowserClient();
+      await supabase.auth.signOut();
+    } catch {
+      // ignore
+    }
+    await refreshSession();
+    router.push("/");
+    router.refresh();
+  }
+
+  return (
+    <div className="flex min-h-screen bg-background text-foreground">
+      <AppSidebar
+        siteName={siteName}
+        collapsed={collapsed}
+        effectivePath={effectivePath}
+        user={user}
+        isLoadingSession={isLoadingSession}
+        onSignOut={handleSignOut}
+      />
+
+      {/* RIGHT COLUMN: Banner + Slim Header + Main Content + Compact Footer */}
+      <div className="flex min-w-0 flex-1 flex-col">
+        <SetupBanner show={isDemoMode} />
+
+        <header className="sticky top-0 z-30 w-full border-b border-border bg-background/95 backdrop-blur-sm">
+          {pendingHref && (
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[2px] overflow-hidden bg-primary/15">
+              <div className="h-full w-1/2 animate-progress-indeterminate bg-primary" />
+            </div>
+          )}
+
+          <div className="flex h-[52px] items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+            {/* Trái: Mobile drawer + logo HOẶC Desktop collapse toggle + tiêu đề trang */}
+            <div className="flex min-w-0 items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setDrawerOpen(true)}
+                className="h-8 w-8 shrink-0 lg:hidden"
+                aria-label="Mở thanh điều hướng"
+              >
+                <Menu className="h-4 w-4" />
+              </Button>
+
+              <Link
+                href="/"
+                prefetch={true}
+                className="flex items-center gap-2 lg:hidden"
+              >
+                <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+                  <Sigma className="h-3.5 w-3.5" />
+                </span>
+                <span className="text-sm font-bold tracking-tight text-foreground">
+                  {siteName}
+                </span>
+              </Link>
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={toggleSidebarCollapse}
+                className="hidden h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground lg:inline-flex"
+                title={collapsed ? "Mở rộng Sidebar" : "Thu gọn Sidebar"}
+                aria-label={collapsed ? "Mở rộng Sidebar" : "Thu gọn Sidebar"}
+              >
+                {collapsed ? (
+                  <PanelLeftOpen className="h-4 w-4" />
+                ) : (
+                  <PanelLeftClose className="h-4 w-4" />
+                )}
+              </Button>
+
+              <span className="hidden truncate text-sm font-semibold text-foreground lg:inline">
+                {pageTitle}
+              </span>
+            </div>
+
+            {/* Phải: Điểm thưởng, Sáng/Tối, Avatar (mobile) và CTA chính */}
+            <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+              {user && (
+                <Link
+                  href="/rewards"
+                  prefetch={true}
+                  className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold tabular-nums text-bounty-foreground transition-colors hover:bg-muted sm:inline-flex"
+                  title="Điểm đổi quà hiện tại"
+                >
+                  <Award className="h-3.5 w-3.5 text-bounty" />
+                  <span>{user.pointsBalance} điểm</span>
+                </Link>
+              )}
+
+              <ThemeToggle />
+
+              {!isLoadingSession &&
+                (user ? (
+                  <Link
+                    href="/profile"
+                    prefetch={true}
+                    className="rounded-full p-0.5 lg:hidden"
+                    aria-label="Hồ sơ cá nhân"
+                  >
+                    <Avatar className="h-7 w-7">
+                      <AvatarImage
+                        src={user.avatarUrl ?? undefined}
+                        alt={user.displayName}
+                      />
+                      <AvatarFallback className="text-[11px]">
+                        {user.displayName.slice(0, 1).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                  </Link>
+                ) : (
+                  <Button
+                    asChild
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2.5 text-xs lg:hidden"
+                  >
+                    <Link href="/login" prefetch={true}>
+                      Đăng nhập
+                    </Link>
+                  </Button>
+                ))}
+
+              <Button asChild size="sm" className="h-8 px-3">
+                <Link href="/threads/new" prefetch={true}>
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Đăng câu hỏi</span>
+                </Link>
+              </Button>
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto w-full max-w-[1220px] flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          {children}
+        </main>
+
+        <footer className="mt-8 border-t border-border py-3.5">
+          <div className="mx-auto flex max-w-[1220px] flex-wrap items-center justify-between gap-2 px-4 text-xs text-muted-foreground sm:px-6 lg:px-8">
+            <span className="font-medium text-foreground/80">
+              {siteName} · CMA MATHS CLUB blog
+            </span>
+            <span className="italic">
+              &ldquo;Nhà toán học xuất sắc nhìn thấy sự tương đồng giữa các phép
+              chứng minh.&rdquo; — S. Banach
+            </span>
+          </div>
+        </footer>
+      </div>
+
+      <AppMobileDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        siteName={siteName}
+        effectivePath={effectivePath}
+        user={user}
+        onSignOut={handleSignOut}
+      />
+    </div>
+  );
+}

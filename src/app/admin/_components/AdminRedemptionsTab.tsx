@@ -11,16 +11,18 @@ import {
   XCircle,
 } from "lucide-react";
 import { reviewRedemptionAction } from "@/app/actions/admin";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
   useDebouncedValue,
 } from "@/hooks/useAdminPaginatedList";
-import type { PaginatedResult } from "@/lib/pagination";
+import { formatDateTimeVN } from "@/lib/format";
 import type { RedemptionItem } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
@@ -37,10 +39,10 @@ const STATUS_META: Record<
 };
 
 export function AdminRedemptionsTab({
-  initialRedemptions,
+  totalRedemptionsCount,
   onNotice,
 }: {
-  initialRedemptions: PaginatedResult<RedemptionItem>;
+  totalRedemptionsCount: number;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
@@ -50,58 +52,61 @@ export function AdminRedemptionsTab({
   const [page, setPage] = useState(1);
   const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<RedemptionItem | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 250);
-  const { data, isFetching } = useAdminPaginatedList({
+  const { data, isLoading, isFetching } = useAdminPaginatedList<RedemptionItem>({
     resource: "redemptions",
     page,
-    pageSize: initialRedemptions.pageSize,
+    pageSize: 10,
     query: debouncedSearch,
     status: statusFilter,
-    initialData: initialRedemptions,
+    onPageClamp: setPage,
   });
 
   async function handleReview(
     rd: RedemptionItem,
     newStatus: "approved" | "fulfilled" | "rejected"
   ) {
-    if (
-      newStatus === "rejected" &&
-      !window.confirm(
-        `Từ chối đơn đổi "${rd.rewardName}" của ${rd.userDisplayName} và tự động hoàn lại ${rd.pointsSpent} điểm + tồn kho?`
-      )
-    ) {
-      return;
-    }
-
     setBusyId(rd.id);
-    const res = await reviewRedemptionAction({
-      redemptionId: rd.id,
-      newStatus,
-      adminNote: adminNotes[rd.id] ?? rd.adminNote,
-    });
-    setBusyId(null);
+    try {
+      const res = await reviewRedemptionAction({
+        redemptionId: rd.id,
+        newStatus,
+        adminNote: adminNotes[rd.id] ?? rd.adminNote,
+      });
 
-    if (!res.ok) {
+      if (!res.ok) {
+        onNotice({
+          type: "error",
+          text: res.error || "Lỗi cập nhật đơn đổi quà.",
+        });
+        return;
+      }
+      if (newStatus === "rejected") {
+        setRejectTarget(null);
+      }
+      onNotice({
+        type: "success",
+        text:
+          newStatus === "rejected"
+            ? "Đã từ chối đơn và tự động hoàn lại điểm + tồn kho!"
+            : newStatus === "fulfilled"
+              ? `Đã đánh dấu hoàn thành trao "${rd.rewardName}" cho ${rd.userDisplayName}!`
+              : "Đã duyệt đơn đổi quà!",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-list", "redemptions"],
+      });
+      router.refresh();
+    } catch {
       onNotice({
         type: "error",
-        text: res.error || "Lỗi cập nhật đơn đổi quà.",
+        text: "Không thể kết nối máy chủ khi xử lý đơn đổi quà.",
       });
-      return;
+    } finally {
+      setBusyId(null);
     }
-    onNotice({
-      type: "success",
-      text:
-        newStatus === "rejected"
-          ? "Đã từ chối đơn và tự động hoàn lại điểm + tồn kho!"
-          : newStatus === "fulfilled"
-            ? `Đã đánh dấu hoàn thành trao "${rd.rewardName}" cho ${rd.userDisplayName}!`
-            : "Đã duyệt đơn đổi quà!",
-    });
-    await queryClient.invalidateQueries({
-      queryKey: ["admin-list", "redemptions"],
-    });
-    router.refresh();
   }
 
   return (
@@ -145,9 +150,14 @@ export function AdminRedemptionsTab({
         </div>
       </Card>
 
-      {data.items.length === 0 ? (
+      {isLoading ? (
+        <Card className="space-y-3 p-5">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </Card>
+      ) : data.items.length === 0 ? (
         <Card className="border-dashed p-8 text-center text-sm text-muted-foreground">
-          {initialRedemptions.totalCount === 0
+          {totalRedemptionsCount === 0
             ? "Chưa có đơn yêu cầu đổi quà nào từ học sinh."
             : "Không có đơn đổi quà nào khớp với bộ lọc hiện tại."}
         </Card>
@@ -176,7 +186,7 @@ export function AdminRedemptionsTab({
                       <strong className="tabular-nums text-foreground">
                         {rd.pointsSpent} điểm
                       </strong>{" "}
-                      · {new Date(rd.createdAt).toLocaleString("vi-VN")}
+                      · {formatDateTimeVN(rd.createdAt)}
                     </p>
                   </div>
                   <Badge variant={meta.variant}>
@@ -250,7 +260,7 @@ export function AdminRedemptionsTab({
                         size="sm"
                         variant="destructive"
                         disabled={isBusy}
-                        onClick={() => void handleReview(rd, "rejected")}
+                        onClick={() => setRejectTarget(rd)}
                       >
                         <XCircle className="h-3.5 w-3.5" />
                         Từ chối &amp; Hoàn điểm
@@ -272,6 +282,25 @@ export function AdminRedemptionsTab({
           />
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(rejectTarget)}
+        onOpenChange={(open) => {
+          if (!open) setRejectTarget(null);
+        }}
+        title="Từ chối đơn đổi quà & hoàn điểm?"
+        description={
+          rejectTarget
+            ? `Hệ thống sẽ từ chối đơn "${rejectTarget.rewardName}" của ${rejectTarget.userDisplayName}, tự động hoàn lại ${rejectTarget.pointsSpent} điểm cho học sinh và cộng lại +1 tồn kho.`
+            : ""
+        }
+        confirmLabel="Từ chối & Hoàn điểm"
+        confirmVariant="destructive"
+        isLoading={Boolean(rejectTarget && busyId === rejectTarget.id)}
+        onConfirm={async () => {
+          if (!rejectTarget) return;
+          await handleReview(rejectTarget, "rejected");
+        }}
+      />
     </div>
   );
 }

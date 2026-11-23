@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -191,23 +192,24 @@ export async function createReplyAction(input: {
       };
     });
 
-    if (threadMeta.authorId !== user.id) {
-      void createNotification({
-        userId: threadMeta.authorId,
-        type: "new_reply",
-        title: `${user.displayName} vừa bình luận bài viết của bạn`,
-        body: threadMeta.title.slice(0, 120),
-        href: `/threads/${input.threadId}`,
+    after(async () => {
+      if (threadMeta.authorId !== user.id) {
+        await createNotification({
+          userId: threadMeta.authorId,
+          type: "new_reply",
+          title: `${user.displayName} vừa bình luận bài viết của bạn`,
+          body: threadMeta.title.slice(0, 120),
+          href: `/threads/${input.threadId}`,
+        });
+      }
+      await broadcastThreadEventFromServer({
+        threadId: input.threadId,
+        kind: "new_reply",
+        senderId: user.id,
+        senderName: user.displayName,
       });
-    }
-
-    void broadcastThreadEventFromServer({
-      threadId: input.threadId,
-      kind: "new_reply",
-      senderName: user.displayName,
     });
     revalidateTag(CACHE_TAGS.threads);
-    revalidatePath(`/threads/${input.threadId}`);
     revalidatePath("/");
     return { ok: true };
   } catch (err) {
@@ -238,21 +240,25 @@ export async function acceptReplyAction(
       replyId,
     });
 
-    void broadcastThreadEventFromServer({
-      threadId,
-      kind: "answer_accepted",
-      senderName: user.displayName,
-    });
-    void createNotification({
-      userId: res.solverId,
-      type: "answer_accepted",
-      title: `Lời giải của bạn được chọn đúng (+${res.awardedPoints} điểm)`,
-      body: res.threadTitle.slice(0, 120),
-      href: `/threads/${threadId}`,
+    after(async () => {
+      await Promise.all([
+        broadcastThreadEventFromServer({
+          threadId,
+          kind: "answer_accepted",
+          senderId: user.id,
+          senderName: user.displayName,
+        }),
+        createNotification({
+          userId: res.solverId,
+          type: "answer_accepted",
+          title: `Lời giải của bạn được chọn đúng (+${res.awardedPoints} điểm)`,
+          body: res.threadTitle.slice(0, 120),
+          href: `/threads/${threadId}`,
+        }),
+      ]);
     });
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
-    revalidatePath(`/threads/${threadId}`);
     revalidatePath("/");
     revalidatePath("/leaderboard");
     return {
@@ -315,7 +321,6 @@ export async function toggleUpvoteReplyAction(
       }
     });
 
-    revalidatePath(`/threads/${threadId}`);
     return { ok: true };
   } catch (err) {
     return {
@@ -468,7 +473,9 @@ export async function deleteOwnThreadAction(
     }
 
     await sql`DELETE FROM public.threads WHERE id = ${threadId}`;
-    void deleteStorageImagesByUrls(orphanUrls);
+    after(async () => {
+      await deleteStorageImagesByUrls(orphanUrls);
+    });
 
     revalidateTag(CACHE_TAGS.threads);
     revalidatePath("/");
@@ -554,12 +561,14 @@ export async function updateReplyAction(input: {
     `;
 
     const threadId = String(row.thread_id);
-    void broadcastThreadEventFromServer({
-      threadId,
-      kind: "moderated",
-      senderName: user.displayName,
+    after(async () => {
+      await broadcastThreadEventFromServer({
+        threadId,
+        kind: "moderated",
+        senderId: user.id,
+        senderName: user.displayName,
+      });
     });
-    revalidatePath(`/threads/${threadId}`);
     return { ok: true };
   } catch (err) {
     return {
@@ -620,14 +629,18 @@ export async function deleteOwnReplyAction(
       };
     });
 
-    void deleteStorageImagesByUrls(deleted.imageUrls);
-    void broadcastThreadEventFromServer({
-      threadId: deleted.threadId,
-      kind: "moderated",
-      senderName: user.displayName,
+    after(async () => {
+      await Promise.all([
+        deleteStorageImagesByUrls(deleted.imageUrls),
+        broadcastThreadEventFromServer({
+          threadId: deleted.threadId,
+          kind: "moderated",
+          senderId: user.id,
+          senderName: user.displayName,
+        }),
+      ]);
     });
     revalidateTag(CACHE_TAGS.threads);
-    revalidatePath(`/threads/${deleted.threadId}`);
     revalidatePath("/");
     return { ok: true };
   } catch (err) {

@@ -105,7 +105,7 @@ export function HomeThreadList({
           <Link
             key={t.id}
             href={`/threads/${t.id}`}
-            prefetch={true}
+            prefetch={false}
             className="group flex items-start justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-muted/35 sm:px-5 sm:py-4"
           >
             {/* Trái: Icon phân loại/trạng thái + Tiêu đề + Trích đoạn + Metadata */}

@@ -12,7 +12,9 @@ export function formatRelativeDate(
   if (hours < 24) return `${hours} giờ trước`;
   const days = Math.floor(hours / 24);
   if (days < 30) return `${days} ngày trước`;
-  return new Date(iso).toLocaleDateString("vi-VN");
+  return new Date(iso).toLocaleDateString("vi-VN", {
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
 }
 
 export function formatDurationShort(seconds: number): string {
@@ -33,6 +35,20 @@ export function formatDateVN(iso: string): string {
     month: "2-digit",
     year: "numeric",
     timeZone: "UTC",
+  });
+}
+
+export function formatDateTimeVN(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Ho_Chi_Minh",
   });
 }
 

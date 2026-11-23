@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Gift, Plus, Trash2 } from "lucide-react";
+import { Gift, Loader2, Plus, Trash2 } from "lucide-react";
 import { deleteRewardAction, upsertRewardAction } from "@/app/actions/admin";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { ImageUploader } from "@/components/ImageUploader";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
@@ -41,12 +42,16 @@ export function AdminRewardsTab({
   const [rewardStock, setRewardStock] = useState("10");
   const [rewardImage, setRewardImage] = useState<string | null>(null);
   const [rewardActive, setRewardActive] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<RewardItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const { data: rewardsData, isFetching } = useAdminPaginatedList({
     resource: "rewards",
     page,
     pageSize: initialRewards.pageSize,
     initialData: initialRewards,
+    onPageClamp: setPage,
   });
 
   function resetForm() {
@@ -71,39 +76,64 @@ export function AdminRewardsTab({
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const res = await upsertRewardAction({
-      id: editingRewardId,
-      name: rewardName,
-      description: rewardDesc,
-      imageUrl: rewardImage,
-      pointsCost: Number(rewardCost),
-      stock: Number(rewardStock),
-      isActive: rewardActive,
-    });
-    if (!res.ok) {
-      onNotice({ type: "error", text: res.error || "Lỗi lưu quà tặng." });
-      return;
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await upsertRewardAction({
+        id: editingRewardId,
+        name: rewardName,
+        description: rewardDesc,
+        imageUrl: rewardImage,
+        pointsCost: Number(rewardCost),
+        stock: Number(rewardStock),
+        isActive: rewardActive,
+      });
+      if (!res.ok) {
+        onNotice({ type: "error", text: res.error || "Lỗi lưu quà tặng." });
+        return;
+      }
+      resetForm();
+      onNotice({
+        type: "success",
+        text: "Đã lưu cấu hình phần quà & mốc điểm thành công!",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-list", "rewards"],
+      });
+      router.refresh();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi lưu quà tặng.",
+      });
+    } finally {
+      setSaving(false);
     }
-    resetForm();
-    onNotice({
-      type: "success",
-      text: "Đã lưu cấu hình phần quà & mốc điểm thành công!",
-    });
-    await queryClient.invalidateQueries({ queryKey: ["admin-list", "rewards"] });
-    router.refresh();
   }
 
-  async function handleDelete(id: string) {
-    if (!window.confirm("Xóa (hoặc ẩn nếu đã có đơn đổi) phần quà này?"))
-      return;
-    const res = await deleteRewardAction(id);
-    if (!res.ok) {
-      onNotice({ type: "error", text: res.error || "Không thể xóa." });
-      return;
+  async function handleConfirmDelete() {
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await deleteRewardAction(deleteTarget.id);
+      if (!res.ok) {
+        onNotice({ type: "error", text: res.error || "Không thể xóa." });
+        return;
+      }
+      setDeleteTarget(null);
+      onNotice({ type: "success", text: "Đã cập nhật danh mục quà tặng." });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-list", "rewards"],
+      });
+      router.refresh();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi xóa quà tặng.",
+      });
+    } finally {
+      setDeleting(false);
     }
-    onNotice({ type: "success", text: "Đã cập nhật danh mục quà tặng." });
-    await queryClient.invalidateQueries({ queryKey: ["admin-list", "rewards"] });
-    router.refresh();
   }
 
   return (
@@ -208,8 +238,12 @@ export function AdminRewardsTab({
             Hiển thị công khai trên Cửa hàng Đổi quà
           </label>
 
-          <Button type="submit" className="w-full">
-            <Plus className="h-4 w-4" />
+          <Button type="submit" className="w-full" disabled={saving}>
+            {saving ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Plus className="h-4 w-4" />
+            )}
             {editingRewardId ? "Lưu thay đổi phần quà" : "Tạo phần quà mới"}
           </Button>
         </form>
@@ -234,6 +268,7 @@ export function AdminRewardsTab({
                     <img
                       src={r.imageUrl}
                       alt={r.name}
+                      loading="lazy"
                       className="h-14 w-14 shrink-0 rounded-lg border border-border object-cover"
                     />
                   ) : (
@@ -274,9 +309,11 @@ export function AdminRewardsTab({
                     type="button"
                     variant="outline"
                     size="icon"
-                    onClick={() => void handleDelete(r.id)}
+                    disabled={deleting}
+                    onClick={() => setDeleteTarget(r)}
                     className="h-8 w-8 border-destructive/30 text-destructive hover:bg-destructive/10"
                     title="Xóa / Ẩn"
+                    aria-label={`Xóa hoặc ẩn phần quà ${r.name}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -295,6 +332,22 @@ export function AdminRewardsTab({
           </>
         )}
       </div>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="Xóa hoặc ẩn phần quà?"
+        description={
+          deleteTarget
+            ? `Phần quà "${deleteTarget.name}" sẽ bị xóa vĩnh viễn nếu chưa có đơn đổi, hoặc chuyển sang trạng thái ẩn để giữ lịch sử đối soát.`
+            : ""
+        }
+        confirmLabel="Xóa / Ẩn phần quà"
+        confirmVariant="destructive"
+        isLoading={deleting}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

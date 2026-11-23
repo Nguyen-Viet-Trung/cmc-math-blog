@@ -14,20 +14,20 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
   useDebouncedValue,
 } from "@/hooks/useAdminPaginatedList";
-import { getThreadTypeLabel } from "@/lib/format";
-import type { PaginatedResult } from "@/lib/pagination";
+import { formatDateTimeVN, getThreadTypeLabel } from "@/lib/format";
 import type { AdminThreadManageItem, ThreadType } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
 export function AdminThreadsTab({
-  initialThreads,
+  totalThreadsCount,
   onNotice,
 }: {
-  initialThreads: PaginatedResult<AdminThreadManageItem>;
+  totalThreadsCount: number;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
@@ -44,14 +44,15 @@ export function AdminThreadsTab({
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const debouncedSearch = useDebouncedValue(threadSearch, 250);
-  const { data, isFetching } = useAdminPaginatedList({
-    resource: "threads",
-    page,
-    pageSize: initialThreads.pageSize,
-    query: debouncedSearch,
-    type: threadTypeFilter,
-    initialData: initialThreads,
-  });
+  const { data, isLoading, isFetching } =
+    useAdminPaginatedList<AdminThreadManageItem>({
+      resource: "threads",
+      page,
+      pageSize: 12,
+      query: debouncedSearch,
+      type: threadTypeFilter,
+      onPageClamp: setPage,
+    });
 
   async function refreshThreads() {
     await queryClient.invalidateQueries({
@@ -141,9 +142,14 @@ export function AdminThreadsTab({
         </div>
       </Card>
 
-      {data.items.length === 0 ? (
+      {isLoading ? (
+        <Card className="space-y-3 p-5">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </Card>
+      ) : data.items.length === 0 ? (
         <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
-          {initialThreads.totalCount === 0
+          {totalThreadsCount === 0
             ? "Chưa có bài viết nào trên diễn đàn."
             : "Không có bài viết nào khớp với bộ lọc hiện tại."}
         </Card>
@@ -179,7 +185,7 @@ export function AdminThreadsTab({
                         {t.authorName}
                       </strong>{" "}
                       ({t.authorEmail}) · {t.categoryName} · {t.gradeTag} ·{" "}
-                      {new Date(t.createdAt).toLocaleString("vi-VN")} ·{" "}
+                      {formatDateTimeVN(t.createdAt)} ·{" "}
                       {t.replyCount} bình luận · {t.viewCount} lượt xem
                     </p>
                   </div>

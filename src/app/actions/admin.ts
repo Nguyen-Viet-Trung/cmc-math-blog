@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag } from "next/cache";
+import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -52,7 +53,7 @@ export async function saveSiteSettingsAction(input: {
     `;
 
     revalidateTag(CACHE_TAGS.siteSettings);
-    revalidatePath("/", "layout");
+    revalidatePath("/");
     revalidatePath("/admin");
     return { ok: true };
   } catch (err) {
@@ -227,18 +228,21 @@ export async function reviewRedemptionAction(input: {
           ? `Đơn đổi quà "${reviewResult.rewardName}" đã được duyệt`
           : `Đơn đổi quà "${reviewResult.rewardName}" bị từ chối (đã hoàn +${reviewResult.pointsSpent}đ)`;
 
-    void createNotification({
-      userId: reviewResult.userId,
-      type: "redemption_update",
-      title: notifTitle,
-      body: reviewResult.nextAdminNote || "Kiểm tra chi tiết tại trang Cửa hàng Đổi quà.",
-      href: "/rewards",
+    after(async () => {
+      await createNotification({
+        userId: reviewResult.userId,
+        type: "redemption_update",
+        title: notifTitle,
+        body:
+          reviewResult.nextAdminNote ||
+          "Kiểm tra chi tiết tại trang Cửa hàng Đổi quà.",
+        href: "/rewards",
+      });
     });
 
     revalidateTag(CACHE_TAGS.rewards);
     revalidatePath("/admin");
     revalidatePath("/rewards");
-    revalidatePath("/", "layout");
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi xử lý đơn đổi quà." };
@@ -305,7 +309,6 @@ export async function adjustStudentPointsAction(input: {
     revalidateTag(CACHE_TAGS.leaderboard);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
-    revalidatePath("/", "layout");
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi điều chỉnh điểm." };
@@ -365,7 +368,6 @@ export async function updateStudentJoinedAtAction(input: {
     revalidatePath("/admin");
     revalidatePath("/profile");
     revalidatePath("/leaderboard");
-    revalidatePath("/", "layout");
     return {
       ok: true,
       joinedAt: new Date(String(updated[0].joined_at)).toISOString(),
@@ -462,7 +464,9 @@ export async function moderateThreadAction(input: {
         }
       }
       await sql`DELETE FROM public.threads WHERE id = ${input.threadId}`;
-      void deleteStorageImagesByUrls(orphanUrls);
+      after(async () => {
+        await deleteStorageImagesByUrls(orphanUrls);
+      });
     } else if (input.action === "toggle_pin") {
       await sql`
         UPDATE public.threads SET is_pinned = NOT is_pinned, updated_at = NOW()
@@ -603,12 +607,14 @@ export async function awardThreadAuthorAction(input: {
       };
     });
 
-    void createNotification({
-      userId: result.authorId,
-      type: "author_reward",
-      title: `Admin thưởng +${pts} điểm cho bài viết của bạn`,
-      body: note || `Bài "${result.threadTitle.slice(0, 80)}"`,
-      href: `/threads/${input.threadId}`,
+    after(async () => {
+      await createNotification({
+        userId: result.authorId,
+        type: "author_reward",
+        title: `Admin thưởng +${pts} điểm cho bài viết của bạn`,
+        body: note || `Bài "${result.threadTitle.slice(0, 80)}"`,
+        href: `/threads/${input.threadId}`,
+      });
     });
 
     revalidateTag(CACHE_TAGS.threads);
@@ -616,7 +622,6 @@ export async function awardThreadAuthorAction(input: {
     revalidatePath(`/threads/${input.threadId}`);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
-    revalidatePath("/", "layout");
 
     return {
       ok: true,
@@ -745,7 +750,6 @@ export async function revokeAcceptedReplyAction(input: {
     revalidatePath(`/threads/${result.threadId}`);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
-    revalidatePath("/", "layout");
 
     return {
       ok: true,
@@ -866,14 +870,15 @@ export async function deleteReplyByAdminAction(input: {
       };
     });
 
-    void deleteStorageImagesByUrls(result.imageUrls);
+    after(async () => {
+      await deleteStorageImagesByUrls(result.imageUrls);
+    });
 
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
     revalidatePath(`/threads/${result.threadId}`);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
-    revalidatePath("/", "layout");
 
     return {
       ok: true,

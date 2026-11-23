@@ -31,15 +31,17 @@
     --radius: 0.5rem;
 
     /* Semantic forum tokens */
-    --bounty: 32 90% 38%;
+    --bounty: 32 90% 35%;
     --bounty-surface: 44 85% 94%;
     --bounty-border: 42 75% 74%;
     --bounty-foreground: 28 84% 28%;
+    --bounty-on-solid: 0 0% 100%;
 
     --success: 145 66% 31%;
     --success-surface: 145 55% 95%;
     --success-border: 148 45% 80%;
     --success-foreground: 146 60% 22%;
+    --success-on-solid: 0 0% 100%;
   }
 
   .dark {
@@ -67,11 +69,13 @@
     --bounty-surface: 36 38% 14%;
     --bounty-border: 36 42% 26%;
     --bounty-foreground: 40 90% 72%;
+    --bounty-on-solid: 222 40% 9%;
 
     --success: 145 62% 52%;
     --success-surface: 150 32% 13%;
     --success-border: 150 32% 24%;
     --success-foreground: 145 68% 72%;
+    --success-on-solid: 222 40% 9%;
   }
 
   * {

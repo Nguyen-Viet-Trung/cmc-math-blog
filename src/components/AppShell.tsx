@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -11,7 +12,6 @@ import {
   Plus,
   Sigma,
 } from "lucide-react";
-import { AppMobileDrawer } from "@/components/AppMobileDrawer";
 import { AppSidebar } from "@/components/AppSidebar";
 import { NotificationBell } from "@/components/NotificationBell";
 import { SetupBanner } from "@/components/SetupBanner";
@@ -20,7 +20,12 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAppSession } from "@/hooks/useAppSession";
 import { getRoutePageTitle, SIDEBAR_STORAGE_KEY } from "@/lib/navigation";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+
+const AppMobileDrawer = dynamic(
+  () =>
+    import("@/components/AppMobileDrawer").then((m) => m.AppMobileDrawer),
+  { ssr: false }
+);
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -30,6 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [drawerMounted, setDrawerMounted] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -86,9 +92,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const effectivePath = pendingHref ?? pathname;
   const pageTitle = getRoutePageTitle(effectivePath);
+  const loginHref =
+    pathname && pathname !== "/" && pathname !== "/login"
+      ? `/login?next=${encodeURIComponent(pathname)}`
+      : "/login";
 
   async function handleSignOut() {
     try {
+      const { createSupabaseBrowserClient } = await import(
+        "@/lib/supabase/client"
+      );
       const supabase = createSupabaseBrowserClient();
       await supabase.auth.signOut();
     } catch {
@@ -128,18 +141,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 variant="ghost"
                 size="icon"
-                onClick={() => setDrawerOpen(true)}
+                onClick={() => {
+                  setDrawerMounted(true);
+                  setDrawerOpen(true);
+                }}
                 className="h-8 w-8 shrink-0 lg:hidden"
                 aria-label="Mở thanh điều hướng"
               >
                 <Menu className="h-4 w-4" />
               </Button>
 
-              <Link
-                href="/"
-                prefetch={true}
-                className="flex items-center gap-2 lg:hidden"
-              >
+              <Link href="/" className="flex items-center gap-2 lg:hidden">
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
                   <Sigma className="h-3.5 w-3.5" />
                 </span>
@@ -174,7 +186,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {user && (
                 <Link
                   href="/rewards"
-                  prefetch={true}
                   className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold tabular-nums text-bounty-foreground transition-colors hover:bg-muted sm:inline-flex"
                   title="Điểm đổi quà hiện tại"
                 >
@@ -191,7 +202,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 (user ? (
                   <Link
                     href="/profile"
-                    prefetch={true}
+                    prefetch={false}
                     className="rounded-full p-0.5 lg:hidden"
                     aria-label="Hồ sơ cá nhân"
                   >
@@ -212,14 +223,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     size="sm"
                     className="h-8 px-2.5 text-xs lg:hidden"
                   >
-                    <Link href="/login" prefetch={true}>
-                      Đăng nhập
-                    </Link>
+                    <Link href={loginHref}>Đăng nhập</Link>
                   </Button>
                 ))}
 
               <Button asChild size="sm" className="h-8 px-3">
-                <Link href="/threads/new" prefetch={true}>
+                <Link href="/threads/new">
                   <Plus className="h-3.5 w-3.5" />
                   <span>Đăng câu hỏi</span>
                 </Link>
@@ -245,14 +254,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </footer>
       </div>
 
-      <AppMobileDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        siteName={siteName}
-        effectivePath={effectivePath}
-        user={user}
-        onSignOut={handleSignOut}
-      />
+      {drawerMounted && (
+        <AppMobileDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          siteName={siteName}
+          effectivePath={effectivePath}
+          user={user}
+          onSignOut={handleSignOut}
+        />
+      )}
     </div>
   );
 }

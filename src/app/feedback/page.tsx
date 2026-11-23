@@ -1,4 +1,4 @@
-import { listPublicFeedbacksPaginated } from "@/app/actions/feedback";
+import { listPublicFeedbacksPaginatedCached } from "@/lib/feedback-service";
 import { getCurrentUserProfile } from "@/lib/forum-service";
 import { FeedbackClient } from "./FeedbackClient";
 
@@ -11,7 +11,7 @@ export const metadata = {
 export default async function FeedbackPage() {
   const [user, paginated] = await Promise.all([
     getCurrentUserProfile(),
-    listPublicFeedbacksPaginated({ page: 1, pageSize: 8 }),
+    listPublicFeedbacksPaginatedCached({ page: 1, pageSize: 8 }),
   ]);
 
   return <FeedbackClient user={user} initialFeedbacks={paginated} />;

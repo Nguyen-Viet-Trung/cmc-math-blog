@@ -1,4 +1,5 @@
 import {
+  getCurrentUserId,
   getCurrentUserProfile,
   listActiveRewards,
   listUserPointHistoryPaginated,
@@ -8,14 +9,15 @@ import { buildPaginatedResult } from "@/lib/pagination";
 import { RewardsClient } from "./RewardsClient";
 
 export default async function RewardsPage() {
-  const user = await getCurrentUserProfile();
-  const [rewards, redemptions, pointHistory] = await Promise.all([
+  const userId = await getCurrentUserId();
+  const [user, rewards, redemptions, pointHistory] = await Promise.all([
+    userId ? getCurrentUserProfile() : Promise.resolve(null),
     listActiveRewards(),
-    user
-      ? listUserRedemptionsPaginated(user.id, 1, 8)
+    userId
+      ? listUserRedemptionsPaginated(userId, 1, 8)
       : Promise.resolve(buildPaginatedResult([], 0, 1, 8)),
-    user
-      ? listUserPointHistoryPaginated(user.id, 1, 10)
+    userId
+      ? listUserPointHistoryPaginated(userId, 1, 10)
       : Promise.resolve(buildPaginatedResult([], 0, 1, 10)),
   ]);
 

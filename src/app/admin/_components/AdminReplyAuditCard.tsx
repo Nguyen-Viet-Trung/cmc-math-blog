@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
@@ -16,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { formatDurationShort } from "@/lib/format";
+import { formatDateTimeVN, formatDurationShort } from "@/lib/format";
 import type { AdminReplyAuditItem, ReplySuspicionCode } from "@/lib/types";
 
 const MathContent = dynamic(
@@ -44,22 +45,19 @@ const SUSPICION_META: Record<
 interface AdminReplyAuditCardProps {
   reply: AdminReplyAuditItem;
   flags: ReplySuspicionCode[];
-  reason: string;
   isBusy: boolean;
-  onReasonChange: (value: string) => void;
-  onRevoke: () => void;
-  onDelete: () => void;
+  onRevoke: (reason: string) => void;
+  onDelete: (reason: string) => void;
 }
 
-export function AdminReplyAuditCard({
+export const AdminReplyAuditCard = memo(function AdminReplyAuditCard({
   reply: r,
   flags,
-  reason,
   isBusy,
-  onReasonChange,
   onRevoke,
   onDelete,
 }: AdminReplyAuditCardProps) {
+  const [reason, setReason] = useState("");
   const isSuspicious = flags.length > 0;
 
   return (
@@ -101,7 +99,7 @@ export function AdminReplyAuditCard({
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
             <span className="inline-flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              {new Date(r.createdAt).toLocaleString("vi-VN")} (sau khi đăng đề{" "}
+              {formatDateTimeVN(r.createdAt)} (sau khi đăng đề{" "}
               <strong
                 className={
                   r.secondsAfterThread <= 60 && r.isAccepted
@@ -151,7 +149,7 @@ export function AdminReplyAuditCard({
         <Input
           type="text"
           value={reason}
-          onChange={(e) => onReasonChange(e.target.value)}
+          onChange={(e) => setReason(e.target.value)}
           placeholder="Lý do thu hồi điểm / xóa bình luận (lưu vào sổ cái điểm)..."
           className="flex-1 text-xs"
         />
@@ -162,7 +160,7 @@ export function AdminReplyAuditCard({
               size="sm"
               variant="bounty"
               disabled={isBusy}
-              onClick={onRevoke}
+              onClick={() => onRevoke(reason)}
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Hủy duyệt &amp; Thu hồi -{r.awardedPoints}đ
@@ -173,7 +171,7 @@ export function AdminReplyAuditCard({
             size="sm"
             variant="destructive"
             disabled={isBusy}
-            onClick={onDelete}
+            onClick={() => onDelete(reason)}
           >
             <Trash2 className="h-3.5 w-3.5" />
             {r.isAccepted ? "Xóa & Thu hồi điểm" : "Xóa bình luận"}
@@ -182,4 +180,4 @@ export function AdminReplyAuditCard({
       </div>
     </Card>
   );
-}
+});

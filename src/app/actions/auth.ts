@@ -113,7 +113,7 @@ export async function signOutAction() {
   if (supabase) {
     await supabase.auth.signOut();
   }
-  revalidatePath("/", "layout");
+  revalidatePath("/");
   redirect("/");
 }
 

@@ -81,7 +81,7 @@ export default async function LeaderboardPage({
                         <td className="px-4 py-3">
                           <Link
                             href={`/members/${u.id}`}
-                            prefetch={true}
+                            prefetch={false}
                             className="group flex items-center gap-2.5"
                           >
                             {u.avatarUrl ? (
@@ -89,6 +89,9 @@ export default async function LeaderboardPage({
                               <img
                                 src={u.avatarUrl}
                                 alt={u.displayName}
+                                width={28}
+                                height={28}
+                                loading="lazy"
                                 className="h-7 w-7 rounded-full border border-border object-cover"
                               />
                             ) : (

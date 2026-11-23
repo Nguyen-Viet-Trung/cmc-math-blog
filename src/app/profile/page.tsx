@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+.import { redirect } from "next/navigation";
 import { ChangePasswordCard } from "@/app/profile/_components/ChangePasswordCard";
 import { getCurrentUserProfile } from "@/lib/forum-service";
 import { ProfileForm } from "./ProfileForm";
@@ -6,7 +6,7 @@ import { ProfileForm } from "./ProfileForm";
 export default async function ProfilePage() {
   const user = await getCurrentUserProfile();
   if (!user) {
-    redirect("/login");
+    redirect("/login?next=/profile");
   }
 
   return (

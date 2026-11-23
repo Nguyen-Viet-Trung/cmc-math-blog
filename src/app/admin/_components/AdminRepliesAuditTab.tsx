@@ -2,41 +2,41 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Award } from "lucide-react";
 import {
   deleteReplyByAdminAction,
   revokeAcceptedReplyAction,
 } from "@/app/actions/admin";
 import { AdminReplyAuditCard } from "@/app/admin/_components/AdminReplyAuditCard";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
+import { useDebouncedValue } from "@/hooks/useAdminPaginatedList";
 import { paginateSlice } from "@/lib/pagination";
-import type {
-  AdminReplyAuditItem,
-  BuffPairSummary,
-  ReplySuspicionCode,
-} from "@/lib/types";
+import { analyzeAdminReplyAudits } from "@/lib/rules";
+import type { AdminReplyAuditItem } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
+const EMPTY_REPLIES: AdminReplyAuditItem[] = [];
+
 export function AdminRepliesAuditTab({
-  replies,
-  flagsByReplyId,
-  suspiciousPairs,
   search,
   onSearchChange,
+  onSuspiciousCountChange,
   onNotice,
 }: {
-  replies: AdminReplyAuditItem[];
-  flagsByReplyId: Record<string, ReplySuspicionCode[]>;
-  suspiciousPairs: BuffPairSummary[];
   search: string;
   onSearchChange: (next: string) => void;
+  onSuspiciousCountChange?: (count: number) => void;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [replyFilter, setReplyFilter] = useState<
     "all" | "accepted" | "suspicious"
   >("all");
@@ -45,22 +45,56 @@ export function AdminRepliesAuditTab({
     userBId: string;
     label: string;
   } | null>(null);
-  const [reasons, setReasons] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    kind: "revoke" | "delete";
+    reply: AdminReplyAuditItem;
+    reason: string;
+  } | null>(null);
   const [page, setPage] = useState(1);
+
+  const debouncedSearch = useDebouncedValue(search, 200);
+
+  const repliesQuery = useQuery<{ replies: AdminReplyAuditItem[] }>({
+    queryKey: ["admin-list", "replies"],
+    queryFn: async () => {
+      const res = await fetch("/api/admin/list?resource=replies", {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        throw new Error("Không thể tải danh sách bình luận kiểm duyệt.");
+      }
+      return (await res.json()) as { replies: AdminReplyAuditItem[] };
+    },
+    staleTime: 15_000,
+  });
+
+  const replies = repliesQuery.data?.replies ?? EMPTY_REPLIES;
+
+  const { flagsByReplyId, suspiciousPairs } = useMemo(
+    () => analyzeAdminReplyAudits(replies),
+    [replies]
+  );
+
+  const suspiciousCount = Object.keys(flagsByReplyId).length;
+
+  useEffect(() => {
+    if (repliesQuery.data && onSuspiciousCountChange) {
+      onSuspiciousCountChange(suspiciousCount);
+    }
+  }, [repliesQuery.data, suspiciousCount, onSuspiciousCountChange]);
 
   useEffect(() => {
     setPage(1);
-  }, [replyFilter, search, selectedPair]);
+  }, [replyFilter, debouncedSearch, selectedPair]);
 
   const acceptedCount = useMemo(
     () => replies.filter((r) => r.isAccepted).length,
     [replies]
   );
-  const suspiciousCount = Object.keys(flagsByReplyId).length;
 
   const filteredReplies = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = debouncedSearch.trim().toLowerCase();
     return replies.filter((r) => {
       if (replyFilter === "accepted" && !r.isAccepted) return false;
       if (replyFilter === "suspicious" && !flagsByReplyId[r.id]?.length) {
@@ -89,57 +123,77 @@ export function AdminRepliesAuditTab({
       }
       return true;
     });
-  }, [replies, replyFilter, search, selectedPair, flagsByReplyId]);
+  }, [replies, replyFilter, debouncedSearch, selectedPair, flagsByReplyId]);
 
-  async function handleRevoke(r: AdminReplyAuditItem) {
-    if (
-      !window.confirm(
-        `Hủy trạng thái "Lời giải đúng" và thu hồi ${r.awardedPoints} điểm từ ${r.replyAuthorName}?`
-      )
-    ) {
-      return;
+  const paged = useMemo(
+    () => paginateSlice(filteredReplies, page, 10),
+    [filteredReplies, page]
+  );
+
+  useEffect(() => {
+    if (paged.page < page) {
+      setPage(paged.page);
     }
+  }, [paged.page, page]);
+
+  async function executeConfirmAction() {
+    if (!confirmAction) return;
+    const { kind, reply: r, reason } = confirmAction;
     setBusyId(r.id);
-    const res = await revokeAcceptedReplyAction({
-      replyId: r.id,
-      reason: reasons[r.id],
-    });
-    setBusyId(null);
-    if (!res.ok) {
+    try {
+      if (kind === "revoke") {
+        const res = await revokeAcceptedReplyAction({
+          replyId: r.id,
+          reason,
+        });
+        if (!res.ok) {
+          onNotice({
+            type: "error",
+            text: res.error || "Không thể thu hồi điểm lời giải này.",
+          });
+          return;
+        }
+        onNotice({
+          type: "success",
+          text: res.message || "Đã hủy lời giải đúng và thu hồi điểm!",
+        });
+      } else {
+        const res = await deleteReplyByAdminAction({
+          replyId: r.id,
+          reason,
+        });
+        if (!res.ok) {
+          onNotice({
+            type: "error",
+            text: res.error || "Không thể xóa bình luận.",
+          });
+          return;
+        }
+        onNotice({ type: "success", text: res.message || "Đã xóa bình luận." });
+      }
+      setConfirmAction(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-list", "replies"],
+      });
+      router.refresh();
+    } catch {
       onNotice({
         type: "error",
-        text: res.error || "Không thể thu hồi điểm lời giải này.",
+        text: "Không thể kết nối máy chủ khi thực hiện kiểm duyệt.",
       });
-      return;
+    } finally {
+      setBusyId(null);
     }
-    onNotice({
-      type: "success",
-      text: res.message || "Đã hủy lời giải đúng và thu hồi điểm!",
-    });
-    router.refresh();
   }
 
-  async function handleDelete(r: AdminReplyAuditItem) {
-    const msg = r.isAccepted
-      ? `Bình luận này ĐÃ CỘNG +${r.awardedPoints} điểm cho ${r.replyAuthorName}. Xóa bình luận sẽ tự động thu hồi điểm và mở lại bài toán. Bạn chắc chắn muốn xóa?`
-      : `Xóa vĩnh viễn bình luận của ${r.replyAuthorName} khỏi bài "${r.threadTitle}"?`;
-    if (!window.confirm(msg)) return;
-
-    setBusyId(r.id);
-    const res = await deleteReplyByAdminAction({
-      replyId: r.id,
-      reason: reasons[r.id],
-    });
-    setBusyId(null);
-    if (!res.ok) {
-      onNotice({
-        type: "error",
-        text: res.error || "Không thể xóa bình luận.",
-      });
-      return;
-    }
-    onNotice({ type: "success", text: res.message || "Đã xóa bình luận." });
-    router.refresh();
+  if (repliesQuery.isLoading) {
+    return (
+      <Card className="space-y-3 p-5">
+        <Skeleton className="h-10 w-full max-w-md" />
+        <Skeleton className="h-28 w-full" />
+        <Skeleton className="h-28 w-full" />
+      </Card>
+    );
   }
 
   return (
@@ -289,35 +343,62 @@ export function AdminRepliesAuditTab({
             : "Không có bình luận nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
-        (() => {
-          const paged = paginateSlice(filteredReplies, page, 10);
-          return (
-            <div className="space-y-3">
-              {paged.items.map((r) => (
-                <AdminReplyAuditCard
-                  key={r.id}
-                  reply={r}
-                  flags={flagsByReplyId[r.id] ?? []}
-                  reason={reasons[r.id] ?? ""}
-                  isBusy={busyId === r.id}
-                  onReasonChange={(val) =>
-                    setReasons({ ...reasons, [r.id]: val })
-                  }
-                  onRevoke={() => void handleRevoke(r)}
-                  onDelete={() => void handleDelete(r)}
-                />
-              ))}
-              <PaginationBar
-                page={paged.page}
-                totalPages={paged.totalPages}
-                totalCount={paged.totalCount}
-                itemLabel="bình luận"
-                onPageChange={setPage}
-              />
-            </div>
-          );
-        })()
+        <div className="space-y-3">
+          {paged.items.map((r) => (
+            <AdminReplyAuditCard
+              key={r.id}
+              reply={r}
+              flags={flagsByReplyId[r.id] ?? []}
+              isBusy={busyId === r.id}
+              onRevoke={(reason) =>
+                setConfirmAction({ kind: "revoke", reply: r, reason })
+              }
+              onDelete={(reason) =>
+                setConfirmAction({ kind: "delete", reply: r, reason })
+              }
+            />
+          ))}
+          <PaginationBar
+            page={paged.page}
+            totalPages={paged.totalPages}
+            totalCount={paged.totalCount}
+            itemLabel="bình luận"
+            isLoading={repliesQuery.isFetching}
+            onPageChange={setPage}
+          />
+        </div>
       )}
+
+      <ConfirmDialog
+        open={Boolean(confirmAction)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmAction(null);
+        }}
+        title={
+          confirmAction?.kind === "revoke"
+            ? "Hủy duyệt & thu hồi điểm?"
+            : "Xóa bình luận vi phạm?"
+        }
+        description={
+          confirmAction
+            ? confirmAction.kind === "revoke"
+              ? `Hủy trạng thái "Lời giải đúng" và thu hồi ${confirmAction.reply.awardedPoints} điểm từ ${confirmAction.reply.replyAuthorName}?`
+              : confirmAction.reply.isAccepted
+                ? `Bình luận này ĐÃ CỘNG +${confirmAction.reply.awardedPoints} điểm cho ${confirmAction.reply.replyAuthorName}. Xóa bình luận sẽ tự động thu hồi điểm và mở lại bài toán.`
+                : `Xóa vĩnh viễn bình luận của ${confirmAction.reply.replyAuthorName} khỏi bài "${confirmAction.reply.threadTitle}"?`
+            : ""
+        }
+        confirmLabel={
+          confirmAction?.kind === "revoke"
+            ? "Hủy duyệt & Thu hồi điểm"
+            : "Xóa bình luận"
+        }
+        confirmVariant={
+          confirmAction?.kind === "revoke" ? "bounty" : "destructive"
+        }
+        isLoading={Boolean(confirmAction && busyId === confirmAction.reply.id)}
+        onConfirm={executeConfirmAction}
+      />
     </div>
   );
 }

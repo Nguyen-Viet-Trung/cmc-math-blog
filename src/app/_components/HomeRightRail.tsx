@@ -14,7 +14,6 @@ export function HomeRightRail({ activeLeaders, rewards }: HomeRightRailProps) {
           <h2 className="section-label">Bảng vàng</h2>
           <Link
             href="/leaderboard"
-            prefetch={true}
             className="text-xs font-medium text-primary hover:underline"
           >
             Xem tất cả
@@ -40,7 +39,7 @@ export function HomeRightRail({ activeLeaders, rewards }: HomeRightRailProps) {
                   <div className="min-w-0">
                     <Link
                       href={`/members/${u.id}`}
-                      prefetch={true}
+                      prefetch={false}
                       className="block truncate font-medium text-foreground hover:text-primary"
                     >
                       {u.displayName}
@@ -64,7 +63,6 @@ export function HomeRightRail({ activeLeaders, rewards }: HomeRightRailProps) {
           <h2 className="section-label">Đổi quà</h2>
           <Link
             href="/rewards"
-            prefetch={true}
             className="text-xs font-medium text-primary hover:underline"
           >
             Cửa hàng
@@ -81,7 +79,6 @@ export function HomeRightRail({ activeLeaders, rewards }: HomeRightRailProps) {
               <li key={r.id}>
                 <Link
                   href="/rewards"
-                  prefetch={true}
                   className="group flex items-start justify-between gap-3 py-2.5 text-xs transition-colors"
                 >
                   <div className="min-w-0">

@@ -42,7 +42,6 @@ export async function redeemRewardAction(input: {
     revalidateTag(CACHE_TAGS.rewards);
     revalidatePath("/rewards");
     revalidatePath("/admin");
-    revalidatePath("/", "layout");
 
     return {
       ok: true,

@@ -6,7 +6,10 @@ import {
   listAdminStudentsPaginated,
   listAdminThreadsPaginated,
 } from "@/lib/admin-list-service";
-import { getCurrentUserProfile } from "@/lib/forum-service";
+import {
+  getCurrentUserProfile,
+  listAllRepliesForAdmin,
+} from "@/lib/forum-service";
 import type { ThreadType } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -60,6 +63,11 @@ export async function GET(request: Request) {
     case "feedbacks":
       return NextResponse.json(
         await listAdminFeedbacksPaginated({ page, pageSize, status, query }),
+        { headers }
+      );
+    case "replies":
+      return NextResponse.json(
+        { replies: await listAllRepliesForAdmin(200) },
         { headers }
       );
     default:

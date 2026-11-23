@@ -26,6 +26,11 @@ export function AppSidebar({
   isLoadingSession,
   onSignOut,
 }: AppSidebarProps) {
+  const loginHref =
+    effectivePath && effectivePath !== "/" && effectivePath !== "/login"
+      ? `/login?next=${encodeURIComponent(effectivePath)}`
+      : "/login";
+
   return (
     <aside
       aria-label="Điều hướng chính"
@@ -43,7 +48,6 @@ export function AppSidebar({
       >
         <Link
           href="/"
-          prefetch={true}
           title={`${siteName} — CMA MATHS CLUB blog`}
           className="flex min-w-0 items-center gap-2.5"
         >
@@ -73,7 +77,6 @@ export function AppSidebar({
               <Link
                 key={item.href}
                 href={item.href}
-                prefetch={true}
                 title={collapsed ? item.label : undefined}
                 className={cn(
                   "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",
@@ -105,7 +108,7 @@ export function AppSidebar({
             )}
             <Link
               href="/admin"
-              prefetch={true}
+              prefetch={false}
               title={collapsed ? "Admin Portal" : undefined}
               className={cn(
                 "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",
@@ -151,7 +154,7 @@ export function AppSidebar({
             <div className="flex items-center gap-1">
               <Link
                 href="/profile"
-                prefetch={true}
+                prefetch={false}
                 title={`${user.displayName} (${user.pointsBalance} điểm)`}
               >
                 <Avatar className="h-7 w-7">
@@ -180,7 +183,7 @@ export function AppSidebar({
             <div className="flex w-full items-center gap-1.5">
               <Link
                 href="/profile"
-                prefetch={true}
+                prefetch={false}
                 className="flex min-w-0 flex-1 items-center gap-2.5 rounded-md px-1.5 py-1.5 transition-colors hover:bg-muted/70"
               >
                 <Avatar className="h-7 w-7 shrink-0">
@@ -224,7 +227,7 @@ export function AppSidebar({
             className="mx-auto flex h-8 w-8"
             title="Đăng nhập"
           >
-            <Link href="/login" prefetch={true} aria-label="Đăng nhập">
+            <Link href={loginHref} aria-label="Đăng nhập">
               <LogIn className="h-4 w-4" />
             </Link>
           </Button>
@@ -235,7 +238,7 @@ export function AppSidebar({
             size="sm"
             className="w-full justify-start text-muted-foreground hover:text-foreground"
           >
-            <Link href="/login" prefetch={true}>
+            <Link href={loginHref}>
               <LogIn className="h-4 w-4" />
               Đăng nhập / Đăng ký
             </Link>

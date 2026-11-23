@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2, LogIn, UserPlus } from "lucide-react";
+import { Eye, EyeOff, Loader2, LogIn, UserPlus } from "lucide-react";
 import { registerStudentAction } from "@/app/actions/auth";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useAppSession } from "@/hooks/useAppSession";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const GRADE_OPTIONS = [
@@ -24,11 +25,43 @@ const GRADE_OPTIONS = [
   "Đại học / Giáo viên",
 ];
 
-export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
+function localizeAuthError(rawMessage: string): string {
+  const lower = rawMessage.toLowerCase();
+  if (
+    lower.includes("invalid login credentials") ||
+    lower.includes("invalid_credentials")
+  ) {
+    return "Email hoặc mật khẩu không chính xác. Vui lòng kiểm tra lại.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Tài khoản này chưa được kích hoạt email. Vui lòng liên hệ Ban Quản Trị.";
+  }
+  if (lower.includes("too many requests") || lower.includes("rate limit")) {
+    return "Bạn thao tác quá nhiều lần liên tiếp. Vui lòng thử lại sau ít phút.";
+  }
+  if (lower.includes("already registered") || lower.includes("already exists")) {
+    return "Email này đã được đăng ký trước đó. Hãy chuyển sang tab Đăng nhập nhé.";
+  }
+  if (lower.includes("network") || lower.includes("fetch")) {
+    return "Không thể kết nối máy chủ xác thực. Vui lòng kiểm tra mạng và thử lại.";
+  }
+  return rawMessage || "Không thể xác thực tài khoản.";
+}
+
+export function LoginForm({
+  isConfigured,
+  nextPath = "/",
+}: {
+  isConfigured: boolean;
+  nextPath?: string;
+}) {
   const router = useRouter();
+  const { refreshSession } = useAppSession();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [gradeLevel, setGradeLevel] = useState("Lớp 10");
   const [loading, setLoading] = useState(false);
@@ -57,13 +90,17 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
           password,
         });
         if (signInErr) throw signInErr;
-        router.push("/");
+        await refreshSession();
+        router.push(nextPath);
         router.refresh();
       } else {
         if (displayName.trim().length < 2) {
           throw new Error(
             "Vui lòng nhập họ tên hiển thị của bạn (tối thiểu 2 ký tự)."
           );
+        }
+        if (password !== confirmPassword) {
+          throw new Error("Mật khẩu nhập lại chưa khớp. Vui lòng kiểm tra lại.");
         }
 
         const regRes = await registerStudentAction({
@@ -87,15 +124,17 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
             "Tài khoản đã được tạo thành công! Bạn hãy bấm Đăng nhập nhé."
           );
           setMode("login");
+          setConfirmPassword("");
         } else {
-          router.push("/");
+          await refreshSession();
+          router.push(nextPath);
           router.refresh();
         }
       }
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Không thể xác thực tài khoản."
-      );
+      const raw =
+        err instanceof Error ? err.message : "Không thể xác thực tài khoản.";
+      setError(localizeAuthError(raw));
     } finally {
       setLoading(false);
     }
@@ -119,6 +158,7 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
         onValueChange={(next) => {
           setMode(next as "login" | "register");
           setError(null);
+          setInfo(null);
         }}
       >
         <TabsList className="grid w-full grid-cols-2">
@@ -166,6 +206,7 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
             id="login-email"
             type="email"
             required
+            autoComplete="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="hocsinh@gmail.com"
@@ -174,15 +215,34 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
 
         <div className="space-y-1.5">
           <Label htmlFor="login-password">Mật khẩu (tối thiểu 6 ký tự)</Label>
-          <Input
-            id="login-password"
-            type="password"
-            required
-            minLength={6}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="••••••••"
-          />
+          <div className="relative">
+            <Input
+              id="login-password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={6}
+              autoComplete={
+                mode === "login" ? "current-password" : "new-password"
+              }
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              className="pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((prev) => !prev)}
+              aria-label={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              title={showPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
+              className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {showPassword ? (
+                <EyeOff className="h-4 w-4" />
+              ) : (
+                <Eye className="h-4 w-4" />
+              )}
+            </button>
+          </div>
           {mode === "login" && (
             <p className="text-[11px] text-muted-foreground">
               Quên mật khẩu? Hãy liên hệ Ban Quản Trị CLB để được cấp lại mật
@@ -190,6 +250,22 @@ export function LoginForm({ isConfigured }: { isConfigured: boolean }) {
             </p>
           )}
         </div>
+
+        {mode === "register" && (
+          <div className="space-y-1.5">
+            <Label htmlFor="login-confirm-password">Nhập lại mật khẩu</Label>
+            <Input
+              id="login-confirm-password"
+              type={showPassword ? "text" : "password"}
+              required
+              minLength={6}
+              autoComplete="new-password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="Nhập lại mật khẩu để xác nhận"
+            />
+          </div>
+        )}
 
         {error && (
           <Alert variant="destructive" className="text-xs font-medium">

@@ -4,6 +4,7 @@
 -- ============================================================================
 
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
+CREATE EXTENSION IF NOT EXISTS "pg_trgm" WITH SCHEMA extensions;
 
 -- 1. Hồ sơ người dùng (Học sinh & Admin)
 CREATE TABLE IF NOT EXISTS public.profiles (
@@ -169,6 +170,16 @@ CREATE INDEX IF NOT EXISTS idx_feedbacks_user_id ON public.feedbacks(user_id);
 CREATE INDEX IF NOT EXISTS idx_reply_upvotes_user_id ON public.reply_upvotes(user_id);
 CREATE INDEX IF NOT EXISTS idx_point_transactions_created_by ON public.point_transactions(created_by);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_unread_created ON public.notifications(user_id, is_read, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_pinned_created ON public.threads(is_pinned DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_author_created ON public.threads(author_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_title_trgm ON public.threads USING GIN (title extensions.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_replies_created_desc ON public.replies(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_replies_thread_accepted_created ON public.replies(thread_id, is_accepted DESC, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_point_tx_ref_user_type ON public.point_transactions(reference_id, user_id, type, created_at DESC) WHERE reference_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_redemptions_user_created ON public.redemptions(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON public.notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_cat_created ON public.feedbacks(category, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_feedbacks_created_desc ON public.feedbacks(created_at DESC);
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.

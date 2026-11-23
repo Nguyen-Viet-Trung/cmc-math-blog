@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getCurrentUserProfile } from "@/lib/forum-service";
+import { getCurrentUserId } from "@/lib/forum-service";
 import {
   listUserNotifications,
   markNotificationsRead,
@@ -8,23 +8,23 @@ import {
 export const dynamic = "force-dynamic";
 
 export async function GET() {
-  const user = await getCurrentUserProfile();
-  if (!user) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
     return NextResponse.json(
       { items: [], unreadCount: 0 },
       { headers: { "Cache-Control": "private, no-cache" } }
     );
   }
 
-  const data = await listUserNotifications(user.id, 20);
+  const data = await listUserNotifications(userId, 20);
   return NextResponse.json(data, {
     headers: { "Cache-Control": "private, no-cache" },
   });
 }
 
 export async function PATCH(request: Request) {
-  const user = await getCurrentUserProfile();
-  if (!user) {
+  const userId = await getCurrentUserId();
+  if (!userId) {
     return NextResponse.json({ error: "Chưa đăng nhập." }, { status: 401 });
   }
 
@@ -38,6 +38,6 @@ export async function PATCH(request: Request) {
     // Empty body means mark all as read
   }
 
-  await markNotificationsRead(user.id, notificationId);
+  await markNotificationsRead(userId, notificationId);
   return NextResponse.json({ ok: true });
 }

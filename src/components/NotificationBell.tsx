@@ -75,6 +75,8 @@ export function NotificationBell() {
         size="icon"
         onClick={() => setOpen((prev) => !prev)}
         aria-label="Thông báo"
+        aria-expanded={open}
+        aria-haspopup="true"
         title="Thông báo"
         className="relative h-8 w-8 text-muted-foreground hover:text-foreground"
       >
@@ -87,7 +89,7 @@ export function NotificationBell() {
       </Button>
 
       {open && (
-        <div className="absolute right-0 top-10 z-50 w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg">
+        <div className="fixed left-4 right-4 top-[56px] z-50 w-auto overflow-hidden rounded-lg border border-border bg-popover text-popover-foreground shadow-lg sm:absolute sm:left-auto sm:right-0 sm:top-10 sm:w-80">
           <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5">
             <span className="text-xs font-semibold text-foreground">
               Thông báo ({unreadCount} mới)

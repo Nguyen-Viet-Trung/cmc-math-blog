@@ -17,7 +17,8 @@ const badgeVariants = cva(
           "border-bounty-border bg-bounty-surface text-bounty-foreground font-semibold",
         success:
           "border-success-border bg-success-surface text-success-foreground font-semibold",
-        successSolid: "border-transparent bg-success text-white font-semibold",
+        successSolid:
+          "border-transparent bg-success text-success-onSolid font-semibold",
       },
     },
     defaultVariants: {

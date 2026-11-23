@@ -7,6 +7,7 @@ import { getSupabaseSecretKey, getSupabaseUrl } from "./env";
 export async function broadcastThreadEventFromServer(params: {
   threadId: string;
   kind: "new_reply" | "answer_accepted" | "upvote_changed" | "moderated";
+  senderId?: string;
   senderName?: string;
 }): Promise<void> {
   const url = getSupabaseUrl();
@@ -28,6 +29,7 @@ export async function broadcastThreadEventFromServer(params: {
             event: "thread_updated",
             payload: {
               kind: params.kind,
+              senderId: params.senderId,
               senderName: params.senderName,
               at: Date.now(),
             },

@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { formatDateVN, formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
-import { getPublicMemberProfile } from "@/lib/forum-service";
+import { getMemberSeoMeta, getPublicMemberProfile } from "@/lib/forum-service";
 
 export async function generateMetadata({
   params,
@@ -25,7 +25,7 @@ export async function generateMetadata({
   params: Promise<{ id: string }>;
 }): Promise<Metadata> {
   const { id } = await params;
-  const member = await getPublicMemberProfile(id);
+  const member = await getMemberSeoMeta(id);
   if (!member) {
     return { title: "Không tìm thấy thành viên" };
   }
@@ -61,7 +61,7 @@ export default async function MemberProfilePage({
           size="sm"
           className="-ml-2 text-muted-foreground"
         >
-          <Link href="/leaderboard" prefetch={true}>
+          <Link href="/leaderboard">
             <ArrowLeft className="h-4 w-4" />
             Quay lại Bảng vàng
           </Link>
@@ -152,7 +152,7 @@ export default async function MemberProfilePage({
               <Link
                 key={t.id}
                 href={`/threads/${t.id}`}
-                prefetch={true}
+                prefetch={false}
                 className="group flex items-start justify-between gap-4 px-4 py-3.5 transition-colors hover:bg-muted/35"
               >
                 <div className="min-w-0 flex-1">

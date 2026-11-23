@@ -4,21 +4,23 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import {
   deleteFeedbackByAdminAction,
   reviewFeedbackByAdminAction,
 } from "@/app/actions/feedback";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
   useDebouncedValue,
 } from "@/hooks/useAdminPaginatedList";
-import type { PaginatedResult } from "@/lib/pagination";
+import { formatDateTimeVN } from "@/lib/format";
 import type { FeedbackItem, FeedbackStatus } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
@@ -30,10 +32,10 @@ const MathContent = dynamic(
 );
 
 export function AdminFeedbacksTab({
-  initialFeedbacks,
+  totalFeedbacksCount,
   onNotice,
 }: {
-  initialFeedbacks: PaginatedResult<FeedbackItem>;
+  totalFeedbacksCount: number;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
@@ -44,15 +46,17 @@ export function AdminFeedbacksTab({
   );
   const [page, setPage] = useState(1);
   const [replies, setReplies] = useState<Record<string, string>>({});
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<FeedbackItem | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 250);
-  const { data, isFetching } = useAdminPaginatedList({
+  const { data, isLoading, isFetching } = useAdminPaginatedList<FeedbackItem>({
     resource: "feedbacks",
     page,
-    pageSize: initialFeedbacks.pageSize,
+    pageSize: 10,
     query: debouncedSearch,
     status: statusFilter,
-    initialData: initialFeedbacks,
+    onPageClamp: setPage,
   });
 
   async function handleReview(
@@ -60,39 +64,61 @@ export function AdminFeedbacksTab({
     status: FeedbackStatus,
     fallbackReply: string
   ) {
-    const res = await reviewFeedbackByAdminAction({
-      feedbackId,
-      status,
-      adminReply: replies[feedbackId] ?? fallbackReply,
-    });
-    if (!res.ok) {
+    if (busyId === feedbackId) return;
+    setBusyId(feedbackId);
+    try {
+      const res = await reviewFeedbackByAdminAction({
+        feedbackId,
+        status,
+        adminReply: replies[feedbackId] ?? fallbackReply,
+      });
+      if (!res.ok) {
+        onNotice({
+          type: "error",
+          text: res.error || "Lỗi cập nhật phản hồi góp ý.",
+        });
+        return;
+      }
+      onNotice({
+        type: "success",
+        text: "Đã lưu phản hồi & trạng thái xử lý góp ý!",
+      });
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-list", "feedbacks"],
+      });
+      router.refresh();
+    } catch {
       onNotice({
         type: "error",
-        text: res.error || "Lỗi cập nhật phản hồi góp ý.",
+        text: "Không thể kết nối máy chủ khi lưu phản hồi.",
       });
-      return;
+    } finally {
+      setBusyId(null);
     }
-    onNotice({
-      type: "success",
-      text: "Đã lưu phản hồi & trạng thái xử lý góp ý!",
-    });
-    await queryClient.invalidateQueries({
-      queryKey: ["admin-list", "feedbacks"],
-    });
-    router.refresh();
   }
 
-  async function handleDelete(feedbackId: string) {
-    if (!window.confirm("Xóa vĩnh viễn mục góp ý / báo lỗi này?")) return;
-    const res = await deleteFeedbackByAdminAction(feedbackId);
-    if (!res.ok) {
-      onNotice({ type: "error", text: res.error || "Không thể xóa." });
-      return;
+  async function handleConfirmDelete() {
+    if (!deleteTarget || busyId === deleteTarget.id) return;
+    setBusyId(deleteTarget.id);
+    try {
+      const res = await deleteFeedbackByAdminAction(deleteTarget.id);
+      if (!res.ok) {
+        onNotice({ type: "error", text: res.error || "Không thể xóa." });
+        return;
+      }
+      setDeleteTarget(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["admin-list", "feedbacks"],
+      });
+      router.refresh();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi xóa góp ý.",
+      });
+    } finally {
+      setBusyId(null);
     }
-    await queryClient.invalidateQueries({
-      queryKey: ["admin-list", "feedbacks"],
-    });
-    router.refresh();
   }
 
   return (
@@ -135,9 +161,14 @@ export function AdminFeedbacksTab({
         </div>
       </Card>
 
-      {data.items.length === 0 ? (
+      {isLoading ? (
+        <Card className="space-y-3 p-5">
+          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-24 w-full" />
+        </Card>
+      ) : data.items.length === 0 ? (
         <Card className="border-dashed p-8 text-center text-sm text-muted-foreground">
-          {initialFeedbacks.totalCount === 0
+          {totalFeedbacksCount === 0
             ? "Chưa có báo cáo lỗi hay đề xuất tính năng nào từ người dùng."
             : "Không có mục góp ý nào khớp với bộ lọc hiện tại."}
         </Card>
@@ -159,7 +190,7 @@ export function AdminFeedbacksTab({
                     Người gửi:{" "}
                     <strong className="text-foreground">{fb.authorName}</strong>{" "}
                     {fb.contactEmail && `(${fb.contactEmail})`} ·{" "}
-                    {new Date(fb.createdAt).toLocaleString("vi-VN")}
+                    {formatDateTimeVN(fb.createdAt)}
                     {fb.pageUrl && ` · Đường dẫn: ${fb.pageUrl}`}
                   </p>
                 </div>
@@ -170,9 +201,11 @@ export function AdminFeedbacksTab({
                     type="button"
                     variant="outline"
                     size="icon"
-                    onClick={() => void handleDelete(fb.id)}
+                    disabled={busyId === fb.id}
+                    onClick={() => setDeleteTarget(fb)}
                     className="h-8 w-8 border-destructive/30 text-destructive hover:bg-destructive/10"
                     title="Xóa góp ý"
+                    aria-label={`Xóa góp ý ${fb.title}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </Button>
@@ -200,16 +233,21 @@ export function AdminFeedbacksTab({
                   <Button
                     type="button"
                     size="sm"
+                    disabled={busyId === fb.id}
                     onClick={() =>
                       void handleReview(fb.id, "in_progress", fb.adminReply)
                     }
                   >
+                    {busyId === fb.id && (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    )}
                     Đang xử lý
                   </Button>
                   <Button
                     type="button"
                     size="sm"
                     variant="success"
+                    disabled={busyId === fb.id}
                     onClick={() =>
                       void handleReview(fb.id, "resolved", fb.adminReply)
                     }
@@ -220,6 +258,7 @@ export function AdminFeedbacksTab({
                     type="button"
                     size="sm"
                     variant="outline"
+                    disabled={busyId === fb.id}
                     onClick={() =>
                       void handleReview(fb.id, "closed", fb.adminReply)
                     }
@@ -241,6 +280,22 @@ export function AdminFeedbacksTab({
           />
         </div>
       )}
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="Xóa vĩnh viễn mục góp ý này?"
+        description={
+          deleteTarget
+            ? `Mục "${deleteTarget.title}" cùng ảnh chụp màn hình đính kèm (nếu có) sẽ bị xóa vĩnh viễn.`
+            : ""
+        }
+        confirmLabel="Xóa góp ý"
+        confirmVariant="destructive"
+        isLoading={Boolean(deleteTarget && busyId === deleteTarget.id)}
+        onConfirm={handleConfirmDelete}
+      />
     </div>
   );
 }

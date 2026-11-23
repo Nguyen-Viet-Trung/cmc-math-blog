@@ -1,4 +1,4 @@
-import Link from "next/link";
+.import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -40,7 +40,7 @@ export default async function NewThreadPage() {
             đúng cộng điểm cho bạn bè nhé.
           </p>
           <Button asChild>
-            <Link href="/login">Đi tới trang Đăng nhập</Link>
+            <Link href="/login?next=/threads/new">Đi tới trang Đăng nhập</Link>
           </Button>
         </Card>
       ) : (

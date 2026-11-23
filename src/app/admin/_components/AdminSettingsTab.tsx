@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Loader2 } from "lucide-react";
 import { saveSiteSettingsAction } from "@/app/actions/admin";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAppSession } from "@/hooks/useAppSession";
 import type { SiteSettings } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
@@ -19,25 +21,39 @@ export function AdminSettingsTab({
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
+  const { refreshSession } = useAppSession();
   const [siteName, setSiteName] = useState(settings.siteName);
   const [defaultPoints, setDefaultPoints] = useState(
     String(settings.defaultSolvedPoints)
   );
   const [announcement, setAnnouncement] = useState(settings.announcement);
+  const [saving, setSaving] = useState(false);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
-    const res = await saveSiteSettingsAction({
-      siteName,
-      defaultSolvedPoints: Number(defaultPoints),
-      announcement,
-    });
-    if (!res.ok) {
-      onNotice({ type: "error", text: res.error || "Lỗi lưu cài đặt." });
-      return;
+    if (saving) return;
+    setSaving(true);
+    try {
+      const res = await saveSiteSettingsAction({
+        siteName,
+        defaultSolvedPoints: Number(defaultPoints),
+        announcement,
+      });
+      if (!res.ok) {
+        onNotice({ type: "error", text: res.error || "Lỗi lưu cài đặt." });
+        return;
+      }
+      onNotice({ type: "success", text: "Đã lưu cài đặt toàn diễn đàn!" });
+      await refreshSession();
+      router.refresh();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi lưu cài đặt.",
+      });
+    } finally {
+      setSaving(false);
     }
-    onNotice({ type: "success", text: "Đã lưu cài đặt toàn diễn đàn!" });
-    router.refresh();
   }
 
   return (
@@ -91,7 +107,10 @@ export function AdminSettingsTab({
           />
         </div>
 
-        <Button type="submit">Lưu cấu hình</Button>
+        <Button type="submit" disabled={saving}>
+          {saving && <Loader2 className="h-4 w-4 animate-spin" />}
+          Lưu cấu hình
+        </Button>
       </form>
     </Card>
   );

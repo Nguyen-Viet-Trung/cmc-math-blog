@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
+import dynamic from "next/dynamic";
 import {
   Bug,
   CheckCircle2,
@@ -12,25 +13,61 @@ import {
 } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { AdminDashboardCounts } from "@/lib/admin-list-service";
 import type { PaginatedResult } from "@/lib/pagination";
-import { analyzeAdminReplyAudits } from "@/lib/rules";
-import type {
-  AdminReplyAuditItem,
-  AdminThreadManageItem,
-  FeedbackItem,
-  RedemptionItem,
-  RewardItem,
-  SiteSettings,
-  UserProfile,
-} from "@/lib/types";
-import { AdminFeedbacksTab } from "./_components/AdminFeedbacksTab";
-import { AdminRedemptionsTab } from "./_components/AdminRedemptionsTab";
-import { AdminRepliesAuditTab } from "./_components/AdminRepliesAuditTab";
+import type { RewardItem, SiteSettings } from "@/lib/types";
 import { AdminRewardsTab, type AdminNotice } from "./_components/AdminRewardsTab";
-import { AdminSettingsTab } from "./_components/AdminSettingsTab";
-import { AdminStudentsTab } from "./_components/AdminStudentsTab";
-import { AdminThreadsTab } from "./_components/AdminThreadsTab";
+
+function AdminTabSkeleton() {
+  return (
+    <Card className="space-y-3 p-5">
+      <Skeleton className="h-9 w-full max-w-md" />
+      <Skeleton className="h-24 w-full" />
+      <Skeleton className="h-24 w-full" />
+    </Card>
+  );
+}
+
+const AdminRedemptionsTab = dynamic(
+  () =>
+    import("./_components/AdminRedemptionsTab").then(
+      (m) => m.AdminRedemptionsTab
+    ),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
+const AdminStudentsTab = dynamic(
+  () =>
+    import("./_components/AdminStudentsTab").then((m) => m.AdminStudentsTab),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
+const AdminThreadsTab = dynamic(
+  () => import("./_components/AdminThreadsTab").then((m) => m.AdminThreadsTab),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
+const AdminRepliesAuditTab = dynamic(
+  () =>
+    import("./_components/AdminRepliesAuditTab").then(
+      (m) => m.AdminRepliesAuditTab
+    ),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
+const AdminFeedbacksTab = dynamic(
+  () =>
+    import("./_components/AdminFeedbacksTab").then((m) => m.AdminFeedbacksTab),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
+const AdminSettingsTab = dynamic(
+  () =>
+    import("./_components/AdminSettingsTab").then((m) => m.AdminSettingsTab),
+  { loading: () => <AdminTabSkeleton /> }
+);
 
 type AdminTabId =
   | "rewards"
@@ -46,32 +83,18 @@ export function AdminDashboardClient({
   settings,
   counts,
   initialRewards,
-  initialRedemptions,
-  initialStudents,
-  initialFeedbacks,
-  initialThreads,
-  replies,
 }: {
   isDemo: boolean;
   settings: SiteSettings;
   counts: AdminDashboardCounts;
   initialRewards: PaginatedResult<RewardItem>;
-  initialRedemptions: PaginatedResult<RedemptionItem>;
-  initialStudents: PaginatedResult<UserProfile>;
-  initialFeedbacks: PaginatedResult<FeedbackItem>;
-  initialThreads: PaginatedResult<AdminThreadManageItem>;
-  replies: AdminReplyAuditItem[];
 }) {
   const [tab, setTab] = useState<AdminTabId>("rewards");
   const [notice, setNotice] = useState<AdminNotice | null>(null);
   const [replySearch, setReplySearch] = useState("");
-
-  const { flagsByReplyId, suspiciousPairs } = useMemo(
-    () => analyzeAdminReplyAudits(replies),
-    [replies]
-  );
-
-  const suspiciousRepliesCount = Object.keys(flagsByReplyId).length;
+  const [detectedSuspiciousCount, setDetectedSuspiciousCount] = useState<
+    number | null
+  >(null);
 
   const tabs: { id: AdminTabId; label: string; icon: typeof Gift }[] = [
     { id: "rewards", label: `Quà tặng (${counts.rewardsCount})`, icon: Gift },
@@ -89,9 +112,9 @@ export function AdminDashboardClient({
     {
       id: "replies",
       label:
-        suspiciousRepliesCount > 0
-          ? `Kiểm duyệt Bình luận (${replies.length} · ${suspiciousRepliesCount} nghi vấn)`
-          : `Kiểm duyệt Bình luận (${replies.length})`,
+        detectedSuspiciousCount && detectedSuspiciousCount > 0
+          ? `Kiểm duyệt Bình luận (${counts.repliesCount} · ${detectedSuspiciousCount} nghi vấn)`
+          : `Kiểm duyệt Bình luận (${counts.repliesCount})`,
       icon: MessageSquareWarning,
     },
     {
@@ -133,16 +156,20 @@ export function AdminDashboardClient({
           </div>
           <div className="border-l border-border pl-4">
             <span className="block text-[11px] text-muted-foreground">
-              Nghi vấn buff
+              {detectedSuspiciousCount !== null ? "Nghi vấn buff" : "Bình luận"}
             </span>
             <strong
               className={`text-base font-bold ${
-                suspiciousRepliesCount > 0
-                  ? "text-destructive"
-                  : "text-success"
+                detectedSuspiciousCount !== null
+                  ? detectedSuspiciousCount > 0
+                    ? "text-destructive"
+                    : "text-success"
+                  : "text-foreground"
               }`}
             >
-              {suspiciousRepliesCount}
+              {detectedSuspiciousCount !== null
+                ? detectedSuspiciousCount
+                : counts.repliesCount}
             </strong>
           </div>
         </div>
@@ -157,7 +184,10 @@ export function AdminDashboardClient({
               type="button"
               variant={tab === t.id ? "default" : "outline"}
               size="sm"
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                setNotice(null);
+              }}
             >
               <Icon className="h-3.5 w-3.5" />
               {t.label}
@@ -183,13 +213,13 @@ export function AdminDashboardClient({
       )}
       {tab === "redemptions" && (
         <AdminRedemptionsTab
-          initialRedemptions={initialRedemptions}
+          totalRedemptionsCount={counts.redemptionsCount}
           onNotice={setNotice}
         />
       )}
       {tab === "students" && (
         <AdminStudentsTab
-          initialStudents={initialStudents}
+          totalStudentsCount={counts.studentsCount}
           onNotice={setNotice}
           onInspectStudentReplies={(email) => {
             setReplySearch(email);
@@ -199,23 +229,21 @@ export function AdminDashboardClient({
       )}
       {tab === "threads" && (
         <AdminThreadsTab
-          initialThreads={initialThreads}
+          totalThreadsCount={counts.threadsCount}
           onNotice={setNotice}
         />
       )}
       {tab === "replies" && (
         <AdminRepliesAuditTab
-          replies={replies}
-          flagsByReplyId={flagsByReplyId}
-          suspiciousPairs={suspiciousPairs}
           search={replySearch}
           onSearchChange={setReplySearch}
+          onSuspiciousCountChange={setDetectedSuspiciousCount}
           onNotice={setNotice}
         />
       )}
       {tab === "feedbacks" && (
         <AdminFeedbacksTab
-          initialFeedbacks={initialFeedbacks}
+          totalFeedbacksCount={counts.feedbacksCount}
           onNotice={setNotice}
         />
       )}

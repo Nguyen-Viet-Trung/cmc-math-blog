@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildHomeFilterUrl,
+  formatDateTimeVN,
   formatDateVN,
   formatDurationShort,
   formatRelativeDate,
@@ -37,6 +38,13 @@ describe("format utilities — định dạng thời gian, nhãn bài viết & U
     expect(formatDateVN("invalid")).toBe("—");
     expect(toDateInputValue("2024-09-05T15:30:00.000Z")).toBe("2024-09-05");
     expect(toDateInputValue("invalid")).toBe("");
+  });
+
+  it("định dạng ngày giờ cố định múi giờ Việt Nam (Asia/Ho_Chi_Minh) tránh lệch hydration", () => {
+    const formatted = formatDateTimeVN("2026-11-23T07:05:00.000Z");
+    expect(formatted).toContain("14:05");
+    expect(formatted).toContain("23/11/2026");
+    expect(formatDateTimeVN("invalid")).toBe("—");
   });
 
   it("trả đúng nhãn cho từng loại bài viết", () => {

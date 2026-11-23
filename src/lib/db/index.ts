@@ -88,14 +88,26 @@ export function getSql(): SqlClient {
 
   if (!globalThis.__mathForumPgPool) {
     const { connectionString, useSsl } = sanitizePgConnectionString(rawUrl);
-    globalThis.__mathForumPgPool = new Pool({
+    const parsedMax = Number(process.env.PG_POOL_MAX ?? 5);
+    const poolMax = Number.isFinite(parsedMax)
+      ? Math.max(1, Math.min(10, Math.trunc(parsedMax)))
+      : 5;
+
+    const pool = new Pool({
       connectionString,
       ssl: useSsl ? { rejectUnauthorized: false } : false,
-      max: 10,
-      idleTimeoutMillis: 30_000,
+      max: poolMax,
+      idleTimeoutMillis: 10_000,
       connectionTimeoutMillis: 8_000,
+      query_timeout: 8_000,
       allowExitOnIdle: true,
     });
+
+    pool.on("error", (err) => {
+      console.error("[pg-pool] idle client error:", err.message);
+    });
+
+    globalThis.__mathForumPgPool = pool;
   }
 
   if (!globalThis.__mathForumSqlAdapter) {

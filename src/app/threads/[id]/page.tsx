@@ -5,6 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { getThreadTypeLabel } from "@/lib/format";
 import {
+  getCurrentUserId,
   getCurrentUserProfile,
   getThreadDetail,
   getThreadSeoMeta,
@@ -49,9 +50,11 @@ export default async function ThreadDetailPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
-  const viewer = await getCurrentUserProfile();
-  const thread = await getThreadDetail(id, viewer?.id);
+  const [{ id }, viewerId] = await Promise.all([params, getCurrentUserId()]);
+  const [viewer, thread] = await Promise.all([
+    viewerId ? getCurrentUserProfile() : Promise.resolve(null),
+    getThreadDetail(id, viewerId),
+  ]);
 
   if (!thread) {
     notFound();
@@ -66,7 +69,7 @@ export default async function ThreadDetailPage({
           size="sm"
           className="-ml-2 text-muted-foreground"
         >
-          <Link href="/" prefetch={true}>
+          <Link href="/">
             <ArrowLeft className="h-4 w-4" />
             Quay lại diễn đàn
           </Link>

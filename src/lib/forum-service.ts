@@ -65,6 +65,34 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
 }
 
 /**
+ * Trích xuất nhanh `userId` từ JWT cookie cục bộ (< 1ms, KHÔNG truy vấn PostgreSQL).
+ * Dùng cho các API read-only và để phá waterfall khi gọi song song với `getCurrentUserProfile()`.
+ */
+export const getCurrentUserId = cache(async (): Promise<string | null> => {
+  if (!isSupabaseAuthConfigured()) {
+    return null;
+  }
+  if (!(await hasSupabaseAuthCookie())) {
+    return null;
+  }
+  const supabase = await createSupabaseServerClient();
+  if (!supabase) return null;
+
+  if (typeof supabase.auth.getClaims === "function") {
+    const { data: claimsData, error: claimsErr } =
+      await supabase.auth.getClaims();
+    if (!claimsErr && claimsData?.claims?.sub) {
+      return String(claimsData.claims.sub);
+    }
+  }
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user?.id ?? null;
+});
+
+/**
  * Lấy thông tin user đang đăng nhập và tự động đồng bộ vào bảng `profiles`
  * (bọc trong React `cache()` để chỉ thực thi tối đa 1 lần cho cả Layout & Page trong cùng 1 request)
  */
@@ -353,7 +381,7 @@ async function queryThreadsPaginatedFromDb(
   const offset = (safePage - 1) * safeSize;
   const sql = getSql();
 
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT
       t.id,
       t.title,
@@ -393,11 +421,37 @@ async function queryThreadsPaginatedFromDb(
       )
     ORDER BY t.is_pinned DESC, t.created_at DESC
     LIMIT ${safeSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount =
+  let effectivePage = safePage;
+  let rows = await fetchRows(offset);
+  let totalCount =
     rows.length > 0 ? Number(rows[0].total_count ?? rows.length) : 0;
+
+  if (rows.length === 0 && safePage > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.threads t
+      JOIN public.categories c ON c.id = t.category_id
+      WHERE (${catSlug}::text IS NULL OR c.slug = ${catSlug})
+        AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
+        AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
+        AND (
+          ${searchPattern}::text IS NULL
+          OR t.title ILIKE ${searchPattern}
+          OR t.content ILIKE ${searchPattern}
+        )
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / safeSize));
+      rows = await fetchRows((effectivePage - 1) * safeSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const totalPages = Math.max(1, Math.ceil(totalCount / safeSize));
 
   const items: ThreadSummary[] = rows.map((r) => ({
@@ -434,7 +488,7 @@ async function queryThreadsPaginatedFromDb(
   return {
     items,
     totalCount,
-    page: safePage,
+    page: effectivePage,
     pageSize: safeSize,
     totalPages,
   };
@@ -498,16 +552,47 @@ export async function listThreadsPaginated(
   );
 }
 
+export const getMemberSeoMeta = cache(
+  async (
+    memberId: string
+  ): Promise<{
+    displayName: string;
+    nickname: string;
+    solvedCount: number;
+    totalEarnedPoints: number;
+  } | null> => {
+    if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
+      return null;
+    }
+    const sql = getSql();
+    const rows = await sql`
+      SELECT display_name, nickname, solved_count, total_earned_points
+      FROM public.profiles
+      WHERE id = ${memberId} AND is_banned = FALSE
+      LIMIT 1
+    `;
+    if (rows.length === 0) return null;
+    const p = rows[0];
+    return {
+      displayName: String(p.display_name),
+      nickname: String(p.nickname ?? ""),
+      solvedCount: Number(p.solved_count ?? 0),
+      totalEarnedPoints: Number(p.total_earned_points ?? 0),
+    };
+  }
+);
+
 /**
  * Hồ sơ công khai của một thành viên (KHÔNG trả về email hay số dư điểm khả dụng để bảo vệ quyền riêng tư)
  */
-export async function getPublicMemberProfile(
-  memberId: string,
-  pageRaw = 1,
-  pageSizeRaw = 10
-): Promise<
-  (PublicMemberProfile & { threadsPage: number; threadsTotalPages: number }) | null
-> {
+export const getPublicMemberProfile = cache(
+  async (
+    memberId: string,
+    pageRaw = 1,
+    pageSizeRaw = 10
+  ): Promise<
+    (PublicMemberProfile & { threadsPage: number; threadsTotalPages: number }) | null
+  > => {
   if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
     return null;
   }
@@ -555,6 +640,24 @@ export async function getPublicMemberProfile(
     : createdAt;
   const threadsCount = Number(countRows[0]?.threads_count ?? 0);
   const threadsTotalPages = Math.max(1, Math.ceil(threadsCount / pageSize));
+  const clampedPage = Math.min(page, threadsTotalPages);
+  let resolvedThreadRows = threadRows;
+  if (resolvedThreadRows.length === 0 && page > threadsTotalPages && threadsCount > 0) {
+    resolvedThreadRows = await sql`
+      SELECT
+        t.id, t.title, LEFT(t.content, 200) AS content_preview,
+        COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
+        t.grade_tag, t.thread_type, t.bounty_points, t.author_reward_points,
+        t.status, t.accepted_reply_id, t.is_pinned, t.view_count, t.reply_count, t.created_at,
+        c.id AS category_id, c.slug AS category_slug, c.name AS category_name, c.color AS category_color
+      FROM public.threads t
+      JOIN public.categories c ON c.id = t.category_id
+      WHERE t.author_id = ${memberId}
+      ORDER BY t.created_at DESC
+      LIMIT ${pageSize}
+      OFFSET ${(clampedPage - 1) * pageSize}
+    `;
+  }
 
   const authorSummary = {
     id: String(p.id),
@@ -578,9 +681,9 @@ export async function getPublicMemberProfile(
     joinedAt,
     threadsCount,
     repliesCount: Number(countRows[0]?.replies_count ?? 0),
-    threadsPage: Math.min(page, threadsTotalPages),
+    threadsPage: clampedPage,
     threadsTotalPages,
-    recentThreads: threadRows.map((r) => ({
+    recentThreads: resolvedThreadRows.map((r) => ({
       id: String(r.id),
       title: String(r.title),
       contentPreview: String(r.content_preview ?? ""),
@@ -604,7 +707,8 @@ export async function getPublicMemberProfile(
       },
     })),
   };
-}
+  }
+);
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -613,39 +717,59 @@ const UUID_REGEX =
  * Truy vấn siêu nhẹ cho `generateMetadata` (SEO & thẻ xem trước Zalo/Facebook)
  * mà KHÔNG làm tăng `view_count`.
  */
-export async function getThreadSeoMeta(threadId: string): Promise<{
-  title: string;
-  excerpt: string;
-  categoryName: string;
-  authorName: string;
-  threadType: ThreadType;
-} | null> {
+export const getThreadSeoMeta = cache(
+  async (
+    threadId: string
+  ): Promise<{
+    title: string;
+    excerpt: string;
+    categoryName: string;
+    authorName: string;
+    threadType: ThreadType;
+  } | null> => {
+    if (!isDatabaseConfigured() || !UUID_REGEX.test(threadId)) {
+      return null;
+    }
+    const sql = getSql();
+    const rows = await sql`
+      SELECT
+        t.title,
+        LEFT(t.content, 180) AS excerpt,
+        t.thread_type,
+        c.name AS category_name,
+        p.display_name AS author_name
+      FROM public.threads t
+      JOIN public.categories c ON c.id = t.category_id
+      JOIN public.profiles p ON p.id = t.author_id
+      WHERE t.id = ${threadId}
+      LIMIT 1
+    `;
+    if (rows.length === 0) return null;
+    const r = rows[0];
+    return {
+      title: String(r.title),
+      excerpt: String(r.excerpt ?? "").replace(/\s+/g, " ").trim(),
+      categoryName: String(r.category_name),
+      authorName: String(r.author_name),
+      threadType: normalizeThreadType(r.thread_type),
+    };
+  }
+);
+
+export async function incrementThreadViewCount(
+  threadId: string
+): Promise<boolean> {
   if (!isDatabaseConfigured() || !UUID_REGEX.test(threadId)) {
-    return null;
+    return false;
   }
   const sql = getSql();
   const rows = await sql`
-    SELECT
-      t.title,
-      LEFT(t.content, 180) AS excerpt,
-      t.thread_type,
-      c.name AS category_name,
-      p.display_name AS author_name
-    FROM public.threads t
-    JOIN public.categories c ON c.id = t.category_id
-    JOIN public.profiles p ON p.id = t.author_id
-    WHERE t.id = ${threadId}
-    LIMIT 1
+    UPDATE public.threads
+    SET view_count = view_count + 1
+    WHERE id = ${threadId}
+    RETURNING id
   `;
-  if (rows.length === 0) return null;
-  const r = rows[0];
-  return {
-    title: String(r.title),
-    excerpt: String(r.excerpt ?? "").replace(/\s+/g, " ").trim(),
-    categoryName: String(r.category_name),
-    authorName: String(r.author_name),
-    threadType: normalizeThreadType(r.thread_type),
-  };
+  return rows.length > 0;
 }
 
 export async function getThreadDetail(
@@ -663,14 +787,8 @@ export async function getThreadDetail(
   const sql = getSql();
   const [threadRows, replyRows] = await Promise.all([
     sql`
-      WITH updated AS (
-        UPDATE public.threads
-        SET view_count = view_count + 1
-        WHERE id = ${threadId}
-        RETURNING *
-      )
       SELECT
-        u.*,
+        t.*,
         p.id AS author_id_ref,
         p.display_name AS author_name,
         p.nickname AS author_nickname,
@@ -681,9 +799,10 @@ export async function getThreadDetail(
         c.slug AS cat_slug,
         c.name AS cat_name,
         c.color AS cat_color
-      FROM updated u
-      JOIN public.profiles p ON p.id = u.author_id
-      JOIN public.categories c ON c.id = u.category_id
+      FROM public.threads t
+      JOIN public.profiles p ON p.id = t.author_id
+      JOIN public.categories c ON c.id = t.category_id
+      WHERE t.id = ${threadId}
       LIMIT 1
     `,
     sql`
@@ -883,17 +1002,42 @@ const getCachedLeaderboardPaginated = unstable_cache(
   async (page: number, pageSize: number): Promise<PaginatedResult<UserProfile>> => {
     const offset = (page - 1) * pageSize;
     const sql = getSql();
-    const rows = await sql`
+    const fetchRows = (off: number) => sql`
       SELECT *, COUNT(*) OVER()::int AS total_count
       FROM public.profiles
       WHERE is_banned = FALSE
         AND (total_earned_points > 0 OR solved_count > 0)
       ORDER BY total_earned_points DESC, solved_count DESC, created_at ASC
       LIMIT ${pageSize}
-      OFFSET ${offset}
+      OFFSET ${off}
     `;
-    const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
-    return buildPaginatedResult(rows.map(mapProfileRow), totalCount, page, pageSize);
+
+    let effectivePage = page;
+    let rows = await fetchRows(offset);
+    let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+    if (rows.length === 0 && page > 1) {
+      const countRows = await sql`
+        SELECT COUNT(*)::int AS total_count
+        FROM public.profiles
+        WHERE is_banned = FALSE
+          AND (total_earned_points > 0 OR solved_count > 0)
+      `;
+      totalCount = Number(countRows[0]?.total_count ?? 0);
+      if (totalCount > 0) {
+        effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+        rows = await fetchRows((effectivePage - 1) * pageSize);
+      } else {
+        effectivePage = 1;
+      }
+    }
+
+    return buildPaginatedResult(
+      rows.map(mapProfileRow),
+      totalCount,
+      effectivePage,
+      pageSize
+    );
   },
   ["forum-leaderboard-paginated"],
   { revalidate: 60, tags: [CACHE_TAGS.leaderboard] }
@@ -980,15 +1124,34 @@ export async function listUserPointHistoryPaginated(
   }
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT *, COUNT(*) OVER()::int AS total_count
     FROM public.point_transactions
     WHERE user_id = ${userId}
     ORDER BY created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.point_transactions
+      WHERE user_id = ${userId}
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: PointTransactionItem[] = rows.map((r) => ({
     id: String(r.id),
     userId: String(r.user_id),
@@ -998,7 +1161,7 @@ export async function listUserPointHistoryPaginated(
     referenceId: r.reference_id ? String(r.reference_id) : null,
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
 export async function listUserRedemptions(
@@ -1023,7 +1186,7 @@ export async function listUserRedemptionsPaginated(
   }
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT
       rd.*,
       rw.name AS reward_name,
@@ -1037,10 +1200,28 @@ export async function listUserRedemptionsPaginated(
     WHERE rd.user_id = ${userId}
     ORDER BY rd.created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.redemptions rd
+      WHERE rd.user_id = ${userId}
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: RedemptionItem[] = rows.map((r) => ({
     id: String(r.id),
     userId: String(r.user_id),
@@ -1056,7 +1237,7 @@ export async function listUserRedemptionsPaginated(
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
 
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
 export async function listAllRedemptionsForAdmin(): Promise<RedemptionItem[]> {

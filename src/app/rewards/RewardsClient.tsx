@@ -70,7 +70,7 @@ export function RewardsClient({
           </div>
         ) : (
           <Button asChild size="sm">
-            <Link href="/login">Đăng nhập để đổi quà</Link>
+            <Link href="/login?next=/rewards">Đăng nhập để đổi quà</Link>
           </Button>
         )}
       </header>
@@ -116,6 +116,7 @@ export function RewardsClient({
                         <img
                           src={r.imageUrl}
                           alt={r.name}
+                          loading="lazy"
                           className="h-full w-full object-cover"
                         />
                       ) : (
@@ -166,24 +167,35 @@ export function RewardsClient({
                       </div>
                     )}
 
-                    <Button
-                      type="button"
-                      disabled={!canRedeem}
-                      onClick={() => {
-                        setSelectedReward(r);
-                        setFeedback(null);
-                      }}
-                      className="w-full"
-                      size="sm"
-                    >
-                      {!user
-                        ? "Đăng nhập để đổi quà"
-                        : r.stock <= 0
+                    {!user ? (
+                      <Button
+                        asChild
+                        variant="outline"
+                        className="w-full"
+                        size="sm"
+                      >
+                        <Link href="/login?next=/rewards">
+                          Đăng nhập để đổi quà
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        disabled={!canRedeem}
+                        onClick={() => {
+                          setSelectedReward(r);
+                          setFeedback(null);
+                        }}
+                        className="w-full"
+                        size="sm"
+                      >
+                        {r.stock <= 0
                           ? "Đã hết quà trong kho"
                           : userPts < r.pointsCost
                             ? `Còn thiếu ${r.pointsCost - userPts} điểm`
                             : "Đổi món quà này ngay"}
-                    </Button>
+                      </Button>
+                    )}
                   </div>
                 </Card>
               );

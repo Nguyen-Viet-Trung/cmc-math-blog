@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Clock } from "lucide-react";
@@ -12,6 +12,7 @@ import { PaginationBar } from "@/components/PaginationBar";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { formatDateTimeVN } from "@/lib/format";
 import type { PaginatedResult } from "@/lib/pagination";
 import type { FeedbackCategory, FeedbackItem } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -55,6 +56,12 @@ export function FeedbackList({
 
   const data = query.data ?? initialFeedbacks;
 
+  useEffect(() => {
+    if (!query.isPlaceholderData && query.data && query.data.page < page) {
+      setPage(query.data.page);
+    }
+  }, [query.isPlaceholderData, query.data, page]);
+
   return (
     <div className="space-y-4 lg:col-span-7">
       <Card className="flex flex-wrap items-center justify-between gap-2 p-4">
@@ -63,7 +70,7 @@ export function FeedbackList({
         </h2>
 
         <div className="flex flex-wrap gap-1.5 text-xs font-semibold">
-          {(["all", "bug", "feature", "ui_ux"] as const).map((k) => (
+          {(["all", "bug", "feature", "ui_ux", "other"] as const).map((k) => (
             <button
               key={k}
               type="button"
@@ -83,6 +90,22 @@ export function FeedbackList({
           ))}
         </div>
       </Card>
+
+      {query.isError && (
+        <Alert
+          variant="destructive"
+          className="flex items-center justify-between gap-3 text-xs"
+        >
+          <span>Không thể tải danh sách góp ý. Vui lòng thử lại.</span>
+          <button
+            type="button"
+            onClick={() => void query.refetch()}
+            className="shrink-0 font-semibold underline"
+          >
+            Thử lại
+          </button>
+        </Alert>
+      )}
 
       {data.items.length === 0 ? (
         <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
@@ -117,7 +140,7 @@ export function FeedbackList({
                     <strong className="text-foreground">
                       {item.authorName}
                     </strong>{" "}
-                    • {new Date(item.createdAt).toLocaleString("vi-VN")}
+                    • {formatDateTimeVN(item.createdAt)}
                     {item.pageUrl && ` • Trang: ${item.pageUrl}`}
                   </p>
                 </div>

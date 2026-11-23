@@ -4,17 +4,12 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
   getAdminDashboardCounts,
-  listAdminFeedbacksPaginated,
-  listAdminRedemptionsPaginated,
   listAdminRewardsPaginated,
-  listAdminStudentsPaginated,
-  listAdminThreadsPaginated,
 } from "@/lib/admin-list-service";
 import { isDatabaseConfigured } from "@/lib/env";
 import {
   getCurrentUserProfile,
   getSiteSettings,
-  listAllRepliesForAdmin,
 } from "@/lib/forum-service";
 import { AdminDashboardClient } from "./AdminDashboardClient";
 
@@ -36,31 +31,19 @@ export default async function AdminPortalPage() {
         </p>
         <div className="pt-1">
           <Button asChild size="sm">
-            <Link href="/login">Đi tới Đăng nhập</Link>
+            <Link href="/login?next=/admin">Đi tới Đăng nhập</Link>
           </Button>
         </div>
       </Card>
     );
   }
 
-  const [
-    settings,
-    counts,
-    initialRewards,
-    initialRedemptions,
-    initialStudents,
-    initialFeedbacks,
-    initialThreads,
-    replies,
-  ] = await Promise.all([
+  // Chỉ tải cấu hình, bộ đếm tổng quan và tab mặc định (Quà tặng) ở SSR;
+  // 5 tab còn lại được code-split và lazy-fetch qua /api/admin/list khi Admin mở tab.
+  const [settings, counts, initialRewards] = await Promise.all([
     getSiteSettings(),
     getAdminDashboardCounts(),
     listAdminRewardsPaginated({ page: 1, pageSize: 8 }),
-    listAdminRedemptionsPaginated({ page: 1, pageSize: 10 }),
-    listAdminStudentsPaginated({ page: 1, pageSize: 15 }),
-    listAdminFeedbacksPaginated({ page: 1, pageSize: 10 }),
-    listAdminThreadsPaginated({ page: 1, pageSize: 12 }),
-    listAllRepliesForAdmin(200),
   ]);
 
   return (
@@ -69,11 +52,6 @@ export default async function AdminPortalPage() {
       settings={settings}
       counts={counts}
       initialRewards={initialRewards}
-      initialRedemptions={initialRedemptions}
-      initialStudents={initialStudents}
-      initialFeedbacks={initialFeedbacks}
-      initialThreads={initialThreads}
-      replies={replies}
     />
   );
 }

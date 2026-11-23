@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Clock, History } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
+import { Alert } from "@/components/ui/alert";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
+import { formatDateTimeVN, formatDateVN } from "@/lib/format";
 import type { PaginatedResult } from "@/lib/pagination";
 import type { PointTransactionItem, RedemptionItem } from "@/lib/types";
 
@@ -74,6 +76,26 @@ export function RewardHistoryPanels({
   const redemptions = redemptionsQuery.data ?? initialRedemptions;
   const pointHistory = pointsQuery.data ?? initialPointHistory;
 
+  useEffect(() => {
+    if (
+      !redemptionsQuery.isPlaceholderData &&
+      redemptionsQuery.data &&
+      redemptionsQuery.data.page < redemptionPage
+    ) {
+      setRedemptionPage(redemptionsQuery.data.page);
+    }
+  }, [redemptionsQuery.isPlaceholderData, redemptionsQuery.data, redemptionPage]);
+
+  useEffect(() => {
+    if (
+      !pointsQuery.isPlaceholderData &&
+      pointsQuery.data &&
+      pointsQuery.data.page < pointsPage
+    ) {
+      setPointsPage(pointsQuery.data.page);
+    }
+  }, [pointsQuery.isPlaceholderData, pointsQuery.data, pointsPage]);
+
   return (
     <div className="grid grid-cols-1 gap-6 pt-2 lg:grid-cols-2">
       <Card className="flex flex-col justify-between space-y-3 p-5">
@@ -82,6 +104,21 @@ export function RewardHistoryPanels({
             <Clock className="h-4 w-4 text-primary" />
             Đơn đổi quà của bạn ({redemptions.totalCount})
           </h3>
+          {redemptionsQuery.isError && (
+            <Alert
+              variant="destructive"
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <span>Không thể tải lịch sử đổi quà.</span>
+              <button
+                type="button"
+                onClick={() => void redemptionsQuery.refetch()}
+                className="font-semibold underline"
+              >
+                Thử lại
+              </button>
+            </Alert>
+          )}
           {redemptions.items.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Bạn chưa có đơn đổi quà nào.
@@ -108,7 +145,7 @@ export function RewardHistoryPanels({
                       <strong className="text-foreground">
                         -{rd.pointsSpent}đ
                       </strong>{" "}
-                      • {new Date(rd.createdAt).toLocaleDateString("vi-VN")}
+                      • {formatDateVN(rd.createdAt)}
                     </p>
                     {rd.adminNote && (
                       <p className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-foreground">
@@ -138,6 +175,21 @@ export function RewardHistoryPanels({
             <History className="h-4 w-4 text-success" />
             Lịch sử cộng / trừ điểm ({pointHistory.totalCount})
           </h3>
+          {pointsQuery.isError && (
+            <Alert
+              variant="destructive"
+              className="flex items-center justify-between gap-2 text-xs"
+            >
+              <span>Không thể tải lịch sử điểm.</span>
+              <button
+                type="button"
+                onClick={() => void pointsQuery.refetch()}
+                className="font-semibold underline"
+              >
+                Thử lại
+              </button>
+            </Alert>
+          )}
           {pointHistory.items.length === 0 ? (
             <p className="text-xs text-muted-foreground">
               Chưa có giao dịch điểm nào. Hãy giải bài toán đầu tiên nhé!
@@ -154,7 +206,7 @@ export function RewardHistoryPanels({
                       {tx.reason}
                     </p>
                     <p className="text-[11px] text-muted-foreground">
-                      {new Date(tx.createdAt).toLocaleString("vi-VN")}
+                      {formatDateTimeVN(tx.createdAt)}
                     </p>
                   </div>
                   <span

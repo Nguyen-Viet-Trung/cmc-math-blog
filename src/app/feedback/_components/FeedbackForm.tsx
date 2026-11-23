@@ -120,39 +120,48 @@ export function FeedbackForm({ user }: { user: UserProfile | null }) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting || uploading) return;
     setSubmitting(true);
     setNotice(null);
 
-    const res = await submitFeedbackAction({
-      category,
-      title,
-      description,
-      pageUrl,
-      imageUrls,
-      contactName,
-      contactEmail,
-    });
+    try {
+      const res = await submitFeedbackAction({
+        category,
+        title,
+        description,
+        pageUrl,
+        imageUrls,
+        contactName,
+        contactEmail,
+      });
 
-    setSubmitting(false);
-    if (!res.ok) {
+      if (!res.ok) {
+        setNotice({
+          type: "error",
+          text: res.error || "Không thể gửi phản hồi.",
+        });
+        return;
+      }
+
+      setTitle("");
+      setDescription("");
+      setPageUrl("");
+      setImageUrls([]);
+      setUploadInfo(null);
+      setNotice({
+        type: "success",
+        text: "Cảm ơn bạn rất nhiều! Báo cáo / đề xuất của bạn đã được ghi nhận để Admin kiểm tra và cập nhật cho các phiên bản tiếp theo.",
+      });
+      await queryClient.invalidateQueries({ queryKey: ["public-feedbacks"] });
+      router.refresh();
+    } catch {
       setNotice({
         type: "error",
-        text: res.error || "Không thể gửi phản hồi.",
+        text: "Không thể kết nối máy chủ khi gửi phản hồi. Vui lòng thử lại.",
       });
-      return;
+    } finally {
+      setSubmitting(false);
     }
-
-    setTitle("");
-    setDescription("");
-    setPageUrl("");
-    setImageUrls([]);
-    setUploadInfo(null);
-    setNotice({
-      type: "success",
-      text: "Cảm ơn bạn rất nhiều! Báo cáo / đề xuất của bạn đã được ghi nhận để Admin kiểm tra và cập nhật cho các phiên bản tiếp theo.",
-    });
-    await queryClient.invalidateQueries({ queryKey: ["public-feedbacks"] });
-    router.refresh();
   }
 
   return (
@@ -338,6 +347,8 @@ export function FeedbackForm({ user }: { user: UserProfile | null }) {
                       onClick={() =>
                         setImageUrls(imageUrls.filter((_, i) => i !== idx))
                       }
+                      aria-label={`Gỡ ảnh chụp màn hình ${idx + 1}`}
+                      title="Gỡ ảnh này"
                       className="absolute right-0.5 top-0.5 rounded bg-destructive p-0.5 text-destructive-foreground"
                     >
                       <Trash2 className="h-3 w-3" />
@@ -358,13 +369,17 @@ export function FeedbackForm({ user }: { user: UserProfile | null }) {
           </Alert>
         )}
 
-        <Button type="submit" disabled={submitting} className="w-full">
+        <Button
+          type="submit"
+          disabled={submitting || uploading}
+          className="w-full"
+        >
           {submitting ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Send className="h-4 w-4" />
           )}
-          Gửi báo cáo / Đề xuất
+          {uploading ? "Đang tải ảnh lên..." : "Gửi báo cáo / Đề xuất"}
         </Button>
       </form>
     </Card>

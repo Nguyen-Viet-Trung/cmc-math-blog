@@ -77,12 +77,14 @@ const config: Config = {
           surface: "hsl(var(--bounty-surface))",
           border: "hsl(var(--bounty-border))",
           foreground: "hsl(var(--bounty-foreground))",
+          onSolid: "hsl(var(--bounty-on-solid))",
         },
         success: {
           DEFAULT: "hsl(var(--success))",
           surface: "hsl(var(--success-surface))",
           border: "hsl(var(--success-border))",
           foreground: "hsl(var(--success-foreground))",
+          onSolid: "hsl(var(--success-on-solid))",
         },
       },
       borderRadius: {

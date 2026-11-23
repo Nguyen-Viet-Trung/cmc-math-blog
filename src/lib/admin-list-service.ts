@@ -23,6 +23,7 @@ export interface AdminDashboardCounts {
   pendingRedemptionsCount: number;
   studentsCount: number;
   threadsCount: number;
+  repliesCount: number;
   feedbacksCount: number;
   openFeedbacksCount: number;
 }
@@ -35,6 +36,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       pendingRedemptionsCount: 0,
       studentsCount: 0,
       threadsCount: 0,
+      repliesCount: 0,
       feedbacksCount: 0,
       openFeedbacksCount: 0,
     };
@@ -48,6 +50,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       (SELECT COUNT(*)::int FROM public.redemptions WHERE status = 'pending') AS pending_redemptions_count,
       (SELECT COUNT(*)::int FROM public.profiles) AS students_count,
       (SELECT COUNT(*)::int FROM public.threads) AS threads_count,
+      (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
       (SELECT COUNT(*)::int FROM public.feedbacks) AS feedbacks_count,
       (SELECT COUNT(*)::int FROM public.feedbacks WHERE status IN ('open', 'in_progress')) AS open_feedbacks_count
   `;
@@ -58,6 +61,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
     pendingRedemptionsCount: Number(r.pending_redemptions_count ?? 0),
     studentsCount: Number(r.students_count ?? 0),
     threadsCount: Number(r.threads_count ?? 0),
+    repliesCount: Number(r.replies_count ?? 0),
     feedbacksCount: Number(r.feedbacks_count ?? 0),
     openFeedbacksCount: Number(r.open_feedbacks_count ?? 0),
   };
@@ -77,15 +81,29 @@ export async function listAdminRewardsPaginated(params: {
   }
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT *, COUNT(*) OVER()::int AS total_count
     FROM public.rewards
     ORDER BY points_cost ASC, created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`SELECT COUNT(*)::int AS total_count FROM public.rewards`;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: RewardItem[] = rows.map((r) => ({
     id: String(r.id),
     name: String(r.name),
@@ -97,7 +115,7 @@ export async function listAdminRewardsPaginated(params: {
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
 
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
 export async function listAdminRedemptionsPaginated(params: {
@@ -122,7 +140,7 @@ export async function listAdminRedemptionsPaginated(params: {
     : null;
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT
       rd.*,
       rw.name AS reward_name,
@@ -146,10 +164,38 @@ export async function listAdminRedemptionsPaginated(params: {
       CASE WHEN rd.status = 'pending' THEN 0 WHEN rd.status = 'approved' THEN 1 ELSE 2 END,
       rd.created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.redemptions rd
+      JOIN public.rewards rw ON rw.id = rd.reward_id
+      JOIN public.profiles p ON p.id = rd.user_id
+      WHERE (${statusFilter}::text IS NULL OR rd.status = ${statusFilter})
+        AND (
+          ${searchPattern}::text IS NULL
+          OR p.display_name ILIKE ${searchPattern}
+          OR p.email ILIKE ${searchPattern}
+          OR rw.name ILIKE ${searchPattern}
+          OR rd.student_note ILIKE ${searchPattern}
+          OR rd.admin_note ILIKE ${searchPattern}
+        )
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: RedemptionItem[] = rows.map((r) => ({
     id: String(r.id),
     userId: String(r.user_id),
@@ -165,7 +211,7 @@ export async function listAdminRedemptionsPaginated(params: {
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
 
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
 export async function listAdminStudentsPaginated(params: {
@@ -187,7 +233,7 @@ export async function listAdminStudentsPaginated(params: {
     : null;
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT *, COUNT(*) OVER()::int AS total_count
     FROM public.profiles
     WHERE (
@@ -198,10 +244,33 @@ export async function listAdminStudentsPaginated(params: {
     )
     ORDER BY role ASC, points_balance DESC, created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.profiles
+      WHERE (
+        ${searchPattern}::text IS NULL
+        OR display_name ILIKE ${searchPattern}
+        OR nickname ILIKE ${searchPattern}
+        OR email ILIKE ${searchPattern}
+      )
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: UserProfile[] = rows.map((row) => {
     const createdAt = new Date(String(row.created_at)).toISOString();
     const joinedAt = row.joined_at
@@ -225,7 +294,7 @@ export async function listAdminStudentsPaginated(params: {
     };
   });
 
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
 export async function listAdminThreadsPaginated(params: {
@@ -250,7 +319,7 @@ export async function listAdminThreadsPaginated(params: {
     : null;
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT
       t.id,
       t.title,
@@ -282,10 +351,37 @@ export async function listAdminThreadsPaginated(params: {
       )
     ORDER BY t.created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.threads t
+      JOIN public.profiles p ON p.id = t.author_id
+      JOIN public.categories c ON c.id = t.category_id
+      WHERE (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
+        AND (
+          ${searchPattern}::text IS NULL
+          OR t.title ILIKE ${searchPattern}
+          OR p.display_name ILIKE ${searchPattern}
+          OR p.email ILIKE ${searchPattern}
+          OR c.name ILIKE ${searchPattern}
+        )
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: AdminThreadManageItem[] = rows.map((r) => ({
     id: String(r.id),
     title: String(r.title),
@@ -305,7 +401,7 @@ export async function listAdminThreadsPaginated(params: {
     authorBanned: Boolean(r.author_banned),
   }));
 
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
 export async function listAdminFeedbacksPaginated(params: {
@@ -330,7 +426,7 @@ export async function listAdminFeedbacksPaginated(params: {
     : null;
 
   const sql = getSql();
-  const rows = await sql`
+  const fetchRows = (off: number) => sql`
     SELECT
       f.*,
       COALESCE(p.display_name, NULLIF(f.contact_name, ''), 'Khách') AS author_name,
@@ -353,10 +449,35 @@ export async function listAdminFeedbacksPaginated(params: {
       END,
       f.created_at DESC
     LIMIT ${pageSize}
-    OFFSET ${offset}
+    OFFSET ${off}
   `;
 
-  const totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.feedbacks f
+      LEFT JOIN public.profiles p ON p.id = f.user_id
+      WHERE (${statusFilter}::text IS NULL OR f.status = ${statusFilter})
+        AND (
+          ${searchPattern}::text IS NULL
+          OR f.title ILIKE ${searchPattern}
+          OR f.description ILIKE ${searchPattern}
+          OR COALESCE(p.display_name, f.contact_name, '') ILIKE ${searchPattern}
+        )
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
   const items: FeedbackItem[] = rows.map((r) => ({
     id: String(r.id),
     userId: r.user_id ? String(r.user_id) : null,
@@ -372,5 +493,5 @@ export async function listAdminFeedbacksPaginated(params: {
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
 
-  return buildPaginatedResult(items, totalCount, page, pageSize);
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }

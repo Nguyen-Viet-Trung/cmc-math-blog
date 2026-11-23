@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import {
-  getCurrentUserProfile,
+  getCurrentUserId,
   getThreadDiscussionSnapshot,
 } from "@/lib/forum-service";
 
@@ -11,9 +11,11 @@ export async function GET(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { id } = await context.params;
-    const viewer = await getCurrentUserProfile();
-    const snapshot = await getThreadDiscussionSnapshot(id, viewer?.id);
+    const [{ id }, viewerId] = await Promise.all([
+      context.params,
+      getCurrentUserId(),
+    ]);
+    const snapshot = await getThreadDiscussionSnapshot(id, viewerId);
 
     if (!snapshot) {
       return NextResponse.json(

@@ -20,7 +20,8 @@ export function useAdminPaginatedList<T>(params: {
   query?: string;
   status?: string;
   type?: string;
-  initialData: PaginatedResult<T>;
+  initialData?: PaginatedResult<T>;
+  onPageClamp?: (nextPage: number) => void;
 }) {
   const isDefaultView =
     params.page === 1 &&
@@ -59,9 +60,32 @@ export function useAdminPaginatedList<T>(params: {
     staleTime: 10_000,
   });
 
+  // Nếu trang hiện tại vượt quá totalPages (VD vừa xóa mục cuối của trang 2), tự động lùi về trang hợp lệ
+  useEffect(() => {
+    if (
+      !query.isPlaceholderData &&
+      query.data &&
+      query.data.page < params.page &&
+      params.onPageClamp
+    ) {
+      params.onPageClamp(query.data.page);
+    }
+  }, [query.isPlaceholderData, query.data, params.page, params.onPageClamp]);
+
+  const fallback: PaginatedResult<T> = params.initialData ?? {
+    items: [],
+    totalCount: 0,
+    page: params.page,
+    pageSize: params.pageSize,
+    totalPages: 1,
+  };
+
   return {
-    data: query.data ?? params.initialData,
+    data: query.data ?? fallback,
+    isLoading: query.isLoading && !query.data,
     isFetching: query.isFetching,
+    isError: query.isError,
+    error: query.error,
     refetch: query.refetch,
   };
 }

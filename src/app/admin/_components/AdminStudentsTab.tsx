@@ -3,34 +3,35 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Calendar, KeyRound } from "lucide-react";
+import { Calendar, KeyRound, Loader2 } from "lucide-react";
 import {
   adjustStudentPointsAction,
   resetStudentPasswordAction,
   toggleStudentBanAction,
   updateStudentJoinedAtAction,
 } from "@/app/actions/admin";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
   useDebouncedValue,
 } from "@/hooks/useAdminPaginatedList";
 import { formatDateVN, toDateInputValue } from "@/lib/format";
-import type { PaginatedResult } from "@/lib/pagination";
 import type { UserProfile } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
 export function AdminStudentsTab({
-  initialStudents,
+  totalStudentsCount,
   onNotice,
   onInspectStudentReplies,
 }: {
-  initialStudents: PaginatedResult<UserProfile>;
+  totalStudentsCount: number;
   onNotice: (n: AdminNotice) => void;
   onInspectStudentReplies: (email: string) => void;
 }) {
@@ -41,6 +42,10 @@ export function AdminStudentsTab({
   const [pointTargetId, setPointTargetId] = useState<string | null>(null);
   const [pointDelta, setPointDelta] = useState("10");
   const [pointReason, setPointReason] = useState("");
+  const [savingPoints, setSavingPoints] = useState(false);
+
+  const [banTarget, setBanTarget] = useState<UserProfile | null>(null);
+  const [banBusy, setBanBusy] = useState(false);
 
   const [joinDateTarget, setJoinDateTarget] = useState<UserProfile | null>(
     null
@@ -55,12 +60,12 @@ export function AdminStudentsTab({
   const [resettingPwd, setResettingPwd] = useState(false);
 
   const debouncedSearch = useDebouncedValue(studentSearch, 250);
-  const { data, isFetching } = useAdminPaginatedList({
+  const { data, isLoading, isFetching } = useAdminPaginatedList<UserProfile>({
     resource: "students",
     page,
-    pageSize: initialStudents.pageSize,
+    pageSize: 15,
     query: debouncedSearch,
-    initialData: initialStudents,
+    onPageClamp: setPage,
   });
 
   function closeAllPanels() {
@@ -78,23 +83,33 @@ export function AdminStudentsTab({
 
   async function handleAdjustPoints(e: React.FormEvent) {
     e.preventDefault();
-    if (!pointTargetId) return;
-    const res = await adjustStudentPointsAction({
-      studentId: pointTargetId,
-      deltaPoints: Number(pointDelta),
-      reason: pointReason,
-    });
-    if (!res.ok) {
-      onNotice({ type: "error", text: res.error || "Lỗi điều chỉnh điểm." });
-      return;
+    if (!pointTargetId || savingPoints) return;
+    setSavingPoints(true);
+    try {
+      const res = await adjustStudentPointsAction({
+        studentId: pointTargetId,
+        deltaPoints: Number(pointDelta),
+        reason: pointReason,
+      });
+      if (!res.ok) {
+        onNotice({ type: "error", text: res.error || "Lỗi điều chỉnh điểm." });
+        return;
+      }
+      setPointTargetId(null);
+      setPointReason("");
+      onNotice({
+        type: "success",
+        text: "Đã cập nhật số điểm học sinh và ghi sổ cái đối soát!",
+      });
+      await refreshStudents();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi điều chỉnh điểm.",
+      });
+    } finally {
+      setSavingPoints(false);
     }
-    setPointTargetId(null);
-    setPointReason("");
-    onNotice({
-      type: "success",
-      text: "Đã cập nhật số điểm học sinh và ghi sổ cái đối soát!",
-    });
-    await refreshStudents();
   }
 
   async function handleSaveJoinedDate(e: React.FormEvent) {
@@ -145,16 +160,34 @@ export function AdminStudentsTab({
     setResetPwdTarget(null);
   }
 
-  async function handleToggleBan(student: UserProfile) {
-    const res = await toggleStudentBanAction({
-      studentId: student.id,
-      isBanned: !student.isBanned,
-    });
-    if (!res.ok) {
-      onNotice({ type: "error", text: res.error || "Lỗi cập nhật." });
-      return;
+  async function handleConfirmToggleBan() {
+    if (!banTarget || banBusy) return;
+    setBanBusy(true);
+    try {
+      const res = await toggleStudentBanAction({
+        studentId: banTarget.id,
+        isBanned: !banTarget.isBanned,
+      });
+      if (!res.ok) {
+        onNotice({ type: "error", text: res.error || "Lỗi cập nhật." });
+        return;
+      }
+      onNotice({
+        type: "success",
+        text: banTarget.isBanned
+          ? `Đã mở khóa tài khoản ${banTarget.displayName}.`
+          : `Đã khóa tài khoản ${banTarget.displayName}.`,
+      });
+      setBanTarget(null);
+      await refreshStudents();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi cập nhật trạng thái tài khoản.",
+      });
+    } finally {
+      setBanBusy(false);
     }
-    await refreshStudents();
   }
 
   return (
@@ -202,7 +235,8 @@ export function AdminStudentsTab({
                 placeholder="Ví dụ: Thưởng lời giải sáng tạo bài Hình học tuần 3"
               />
             </div>
-            <Button type="submit" size="sm">
+            <Button type="submit" size="sm" disabled={savingPoints}>
+              {savingPoints && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
               Xác nhận cập nhật điểm
             </Button>
             <Button
@@ -314,15 +348,22 @@ export function AdminStudentsTab({
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {data.items.length === 0 ? (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="space-y-2 px-4 py-6">
+                    <Skeleton className="h-8 w-full" />
+                    <Skeleton className="h-8 w-full" />
+                  </td>
+                </tr>
+              ) : data.items.length === 0 ? (
                 <tr>
                   <td
                     colSpan={6}
                     className="px-4 py-8 text-center text-sm text-muted-foreground"
                   >
-                    {studentSearch.trim()
-                      ? "Không tìm thấy học sinh nào khớp với từ khóa tìm kiếm."
-                      : "Chưa có học sinh nào đăng ký tài khoản."}
+                    {totalStudentsCount === 0
+                      ? "Chưa có học sinh nào đăng ký tài khoản."
+                      : "Không tìm thấy học sinh nào khớp với từ khóa tìm kiếm."}
                   </td>
                 </tr>
               ) : (
@@ -417,7 +458,8 @@ export function AdminStudentsTab({
                             type="button"
                             size="sm"
                             variant="outline"
-                            onClick={() => void handleToggleBan(s)}
+                            disabled={banBusy}
+                            onClick={() => setBanTarget(s)}
                             className="h-7 px-2 text-xs hover:border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
                           >
                             {s.isBanned ? "Mở khóa" : "Khóa"}
@@ -440,6 +482,27 @@ export function AdminStudentsTab({
         itemLabel="học sinh"
         isLoading={isFetching}
         onPageChange={setPage}
+      />
+
+      <ConfirmDialog
+        open={Boolean(banTarget)}
+        onOpenChange={(open) => {
+          if (!open) setBanTarget(null);
+        }}
+        title={
+          banTarget?.isBanned
+            ? `Mở khóa tài khoản ${banTarget.displayName}?`
+            : `Khóa tài khoản ${banTarget?.displayName ?? ""}?`
+        }
+        description={
+          banTarget?.isBanned
+            ? "Học sinh này sẽ được khôi phục quyền đăng bài, gửi lời giải và đổi quà trên diễn đàn."
+            : "Tài khoản bị khóa sẽ không thể đăng bài, bình luận, bấm cảm ơn hay đổi quà cho tới khi Admin mở lại."
+        }
+        confirmLabel={banTarget?.isBanned ? "Mở khóa" : "Khóa tài khoản"}
+        confirmVariant={banTarget?.isBanned ? "success" : "destructive"}
+        isLoading={banBusy}
+        onConfirm={handleConfirmToggleBan}
       />
     </div>
   );

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -8,19 +9,16 @@ import {
   CheckCircle2,
   FlaskConical,
   Gift,
-  Loader2,
   Newspaper,
   Pencil,
   Pin,
-  Send,
   Trash2,
 } from "lucide-react";
 import { deleteOwnThreadAction } from "@/app/actions/forum";
-import { ThreadAdminBar } from "@/app/threads/[id]/_components/ThreadAdminBar";
-import { ThreadEditForm } from "@/app/threads/[id]/_components/ThreadEditForm";
+import { ThreadReplyComposer } from "@/app/threads/[id]/_components/ThreadReplyComposer";
 import { ThreadReplyList } from "@/app/threads/[id]/_components/ThreadReplyList";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MathContent } from "@/components/MathContent";
-import { MathEditor } from "@/components/MathEditor";
 import { Alert } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -29,7 +27,28 @@ import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { useAppSession } from "@/hooks/useAppSession";
 import { useThreadDiscussion } from "@/hooks/useThreadDiscussion";
+import { formatDateTimeVN } from "@/lib/format";
 import type { ThreadDetail, UserProfile } from "@/lib/types";
+
+const ThreadAdminBar = dynamic(
+  () =>
+    import("@/app/threads/[id]/_components/ThreadAdminBar").then(
+      (m) => m.ThreadAdminBar
+    ),
+  { ssr: false }
+);
+
+const ThreadEditForm = dynamic(
+  () =>
+    import("@/app/threads/[id]/_components/ThreadEditForm").then(
+      (m) => m.ThreadEditForm
+    ),
+  {
+    loading: () => (
+      <div className="h-40 animate-pulse rounded-lg bg-muted/50" />
+    ),
+  }
+);
 
 export function ThreadInteractive({
   thread,
@@ -40,14 +59,23 @@ export function ThreadInteractive({
 }) {
   const router = useRouter();
   const { refreshSession } = useAppSession();
-  const [replyContent, setReplyContent] = useState("");
-  const [replyImages, setReplyImages] = useState<string[]>([]);
   const [isEditingThread, setIsEditingThread] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingThread, setDeletingThread] = useState(false);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  const viewTrackedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (viewTrackedRef.current === thread.id) return;
+    viewTrackedRef.current = thread.id;
+    void fetch(`/api/threads/${thread.id}/view`, {
+      method: "POST",
+      keepalive: true,
+    }).catch(() => {});
+  }, [thread.id]);
 
   const {
     discussion,
@@ -93,87 +121,89 @@ export function ThreadInteractive({
     (isThreadOwner || isAdmin);
   const isThreadEdited = Boolean(
     thread.updatedAt &&
-    new Date(thread.updatedAt).getTime() -
-    new Date(thread.createdAt).getTime() >
-    5000
+      new Date(thread.updatedAt).getTime() -
+        new Date(thread.createdAt).getTime() >
+        5000
   );
 
-  async function handleAccept(replyId: string) {
-    setFeedback(null);
-    try {
-      const res = await acceptReplyMutation.mutateAsync(replyId);
-      setFeedback({
-        type: "success",
-        text: res.message || "Đã cộng điểm cho lời giải đúng!",
-      });
-      await refreshSession();
-      router.refresh();
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Không thể xác nhận lời giải đúng.",
-      });
-    }
-  }
+  const handleAccept = useCallback(
+    async (replyId: string) => {
+      setFeedback(null);
+      try {
+        const res = await acceptReplyMutation.mutateAsync(replyId);
+        setFeedback({
+          type: "success",
+          text: res.message || "Đã cộng điểm cho lời giải đúng!",
+        });
+        await refreshSession();
+      } catch (err) {
+        setFeedback({
+          type: "error",
+          text:
+            err instanceof Error
+              ? err.message
+              : "Không thể xác nhận lời giải đúng.",
+        });
+      }
+    },
+    [acceptReplyMutation, refreshSession]
+  );
 
-  async function handleUpvote(replyId: string) {
-    if (!viewer) {
-      setFeedback({
-        type: "error",
-        text: "Vui lòng đăng nhập để bấm cảm ơn lời giải.",
-      });
-      return;
-    }
-    try {
-      await toggleUpvoteMutation.mutateAsync(replyId);
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text:
-          err instanceof Error
-            ? err.message
-            : "Không thể cập nhật lượt cảm ơn.",
-      });
-    }
-  }
+  const handleUpvote = useCallback(
+    async (replyId: string) => {
+      if (!viewer) {
+        setFeedback({
+          type: "error",
+          text: "Vui lòng đăng nhập để bấm cảm ơn lời giải.",
+        });
+        return;
+      }
+      try {
+        await toggleUpvoteMutation.mutateAsync(replyId);
+      } catch (err) {
+        setFeedback({
+          type: "error",
+          text:
+            err instanceof Error
+              ? err.message
+              : "Không thể cập nhật lượt cảm ơn.",
+        });
+      }
+    },
+    [viewer, toggleUpvoteMutation]
+  );
 
-  async function handlePostReply(e: React.FormEvent) {
-    e.preventDefault();
-    setFeedback(null);
-    try {
-      await postReplyMutation.mutateAsync({
-        content: replyContent,
-        imageUrls: replyImages,
-      });
-      setReplyContent("");
-      setReplyImages([]);
-    } catch (err) {
-      setFeedback({
-        type: "error",
-        text: err instanceof Error ? err.message : "Không thể gửi lời giải.",
-      });
-    }
-  }
+  const handlePostReply = useCallback(
+    async (input: { content: string; imageUrls: string[] }) => {
+      setFeedback(null);
+      await postReplyMutation.mutateAsync(input);
+    },
+    [postReplyMutation]
+  );
 
   async function handleDeleteOwnThread() {
-    if (!window.confirm("Bạn chắc chắn muốn xóa vĩnh viễn bài viết này?")) {
-      return;
-    }
     setDeletingThread(true);
-    const res = await deleteOwnThreadAction(thread.id);
-    setDeletingThread(false);
-    if (!res.ok) {
+    try {
+      const res = await deleteOwnThreadAction(thread.id);
+      if (!res.ok) {
+        setConfirmDeleteOpen(false);
+        setFeedback({
+          type: "error",
+          text: res.error || "Không thể xóa bài viết.",
+        });
+        return;
+      }
+      router.push("/");
+      router.refresh();
+    } catch {
+      setConfirmDeleteOpen(false);
       setFeedback({
         type: "error",
-        text: res.error || "Không thể xóa bài viết.",
+        text: "Không thể kết nối máy chủ khi xóa bài viết.",
       });
-      return;
+    } finally {
+      setDeletingThread(false);
     }
-    router.push("/");
-    router.refresh();
   }
 
   async function handleModerated(refreshSessionAlso = false) {
@@ -184,6 +214,10 @@ export function ThreadInteractive({
     }
     router.refresh();
   }
+
+  const handleRefresh = useCallback(() => {
+    void invalidateDiscussion();
+  }, [invalidateDiscussion]);
 
   return (
     <div className="space-y-6">
@@ -271,7 +305,7 @@ export function ThreadInteractive({
                   </Avatar>
                   <Link
                     href={`/members/${thread.author.id}`}
-                    prefetch={true}
+                    prefetch={false}
                     className="text-xs font-semibold text-foreground hover:text-primary"
                   >
                     {thread.author.displayName}
@@ -283,7 +317,7 @@ export function ThreadInteractive({
                   </Link>
                   <span className="text-xs text-muted-foreground">
                     ({thread.author.gradeLevel}) •{" "}
-                    {new Date(thread.createdAt).toLocaleString("vi-VN")}
+                    {formatDateTimeVN(thread.createdAt)}
                     {isThreadEdited && (
                       <span className="ml-1 italic">(đã chỉnh sửa)</span>
                     )}
@@ -315,7 +349,7 @@ export function ThreadInteractive({
                       size="sm"
                       variant="ghost"
                       disabled={deletingThread}
-                      onClick={() => void handleDeleteOwnThread()}
+                      onClick={() => setConfirmDeleteOpen(true)}
                       className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
@@ -358,6 +392,7 @@ export function ThreadInteractive({
       )}
 
       <ThreadReplyList
+        threadId={thread.id}
         replies={discussion.replies}
         threadAuthorId={thread.author.id}
         viewerId={viewer?.id ?? null}
@@ -372,74 +407,32 @@ export function ThreadInteractive({
         isFetching={isFetching}
         isUpvoting={toggleUpvoteMutation.isPending}
         isAccepting={acceptReplyMutation.isPending}
-        onRefresh={() => void invalidateDiscussion()}
-        onUpvote={(id) => void handleUpvote(id)}
-        onAccept={(id) => void handleAccept(id)}
+        onRefresh={handleRefresh}
+        onUpvote={handleUpvote}
+        onAccept={handleAccept}
         onFeedback={setFeedback}
       />
 
-      <Card className="p-5 sm:p-7">
-        <div className="space-y-4">
-          <h3 className="heading-3">
-            {isArticleThread
-              ? "Bình luận & trao đổi về bài viết"
-              : "Gửi lời giải hoặc trao đổi thêm"}
-          </h3>
+      <ThreadReplyComposer
+        threadId={thread.id}
+        status={discussion.status}
+        viewer={viewer}
+        isArticleThread={isArticleThread}
+        bountyPoints={discussion.bountyPoints}
+        isSubmitting={postReplyMutation.isPending}
+        onSubmit={handlePostReply}
+      />
 
-          {discussion.status === "closed" ? (
-            <p className="text-sm text-muted-foreground">
-              Chủ đề này đã đóng thảo luận.
-            </p>
-          ) : !viewer ? (
-            <Alert
-              variant="info"
-              className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"
-            >
-              <p className="text-sm">
-                {isArticleThread ? (
-                  "Hãy đăng nhập để tham gia thảo luận về bài viết này."
-                ) : (
-                  <>
-                    Hãy đăng nhập để gửi lời giải và nhận{" "}
-                    <strong className="text-bounty">
-                      +{discussion.bountyPoints} điểm
-                    </strong>{" "}
-                    nếu được chọn!
-                  </>
-                )}
-              </p>
-              <Button asChild size="sm">
-                <Link href="/login">Đăng nhập</Link>
-              </Button>
-            </Alert>
-          ) : (
-            <form onSubmit={handlePostReply} className="space-y-4">
-              <MathEditor
-                value={replyContent}
-                onChange={setReplyContent}
-                imageUrls={replyImages}
-                onChangeImages={setReplyImages}
-                rows={5}
-                placeholder={
-                  isArticleThread
-                    ? "Nhập bình luận hoặc trao đổi thêm về bài viết (hỗ trợ LaTeX & dán ảnh Ctrl+V)..."
-                    : "Nhập lời giải hoặc trao đổi... Tin nhắn mới sẽ tự động hiển thị trực tuyến lên màn hình các bạn đang xem bài này!"
-                }
-              />
-              <div className="flex justify-end">
-                <Button type="submit" disabled={postReplyMutation.isPending}>
-                  {postReplyMutation.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                  {isArticleThread ? "Gửi bình luận" : "Gửi lời giải"}
-                </Button>
-              </div>
-            </form>
-          )}
-        </div>
-      </Card>
+      <ConfirmDialog
+        open={confirmDeleteOpen}
+        onOpenChange={setConfirmDeleteOpen}
+        title="Xóa bài viết vĩnh viễn?"
+        description="Bài viết cùng toàn bộ hình ảnh đính kèm sẽ bị xóa và không thể khôi phục."
+        confirmLabel="Xóa bài viết"
+        confirmVariant="destructive"
+        isLoading={deletingThread}
+        onConfirm={handleDeleteOwnThread}
+      />
     </div>
   );
 }

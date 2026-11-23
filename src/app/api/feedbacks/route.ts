@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listPublicFeedbacksPaginated } from "@/app/actions/feedback";
+import { listPublicFeedbacksPaginatedCached } from "@/lib/feedback-service";
 import type { FeedbackCategory } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,11 @@ export async function GET(request: Request) {
       ? catParam
       : "all";
 
-  const data = await listPublicFeedbacksPaginated({ page, pageSize, category });
+  const data = await listPublicFeedbacksPaginatedCached({
+    page,
+    pageSize,
+    category,
+  });
   return NextResponse.json(data, {
     headers: { "Cache-Control": "public, max-age=15" },
   });

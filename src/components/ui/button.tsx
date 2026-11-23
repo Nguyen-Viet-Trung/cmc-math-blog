@@ -19,8 +19,10 @@ const buttonVariants = cva(
         ghost:
           "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
         link: "text-primary underline-offset-4 hover:underline",
-        success: "bg-success text-white hover:bg-success/90",
-        bounty: "bg-bounty text-white hover:bg-bounty/90",
+        success:
+          "bg-success text-success-onSolid font-semibold hover:bg-success/90",
+        bounty:
+          "bg-bounty text-bounty-onSolid font-semibold hover:bg-bounty/90",
       },
       size: {
         default: "h-9 px-3.5 py-2",

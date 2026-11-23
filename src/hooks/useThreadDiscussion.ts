@@ -19,6 +19,7 @@ export type RealtimeConnectionState = "connecting" | "live" | "offline";
 
 interface BroadcastPayload {
   kind: "new_reply" | "answer_accepted" | "upvote_changed" | "moderated";
+  senderId?: string;
   senderName?: string;
   at: number;
 }
@@ -66,10 +67,10 @@ export function useThreadDiscussion({
       }
       return (await res.json()) as ThreadDiscussionSnapshot;
     },
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: realtimeState !== "live",
     refetchOnReconnect: true,
-    // Dự phòng tự đồng bộ nhẹ mỗi 30s khi đang mở tab (phòng trường hợp mạng trường học chặn WebSocket)
-    refetchInterval: 30_000,
+    // Chỉ bật polling dự phòng 30s khi WebSocket chưa ở trạng thái live (VD mạng trường học chặn WS)
+    refetchInterval: realtimeState === "live" ? false : 30_000,
     refetchIntervalInBackground: false,
   });
 
@@ -106,6 +107,10 @@ export function useThreadDiscussion({
     channel
       .on("broadcast", { event: "thread_updated" }, ({ payload }) => {
         const data = payload as BroadcastPayload | undefined;
+        // Bỏ qua sự kiện do chính người dùng hiện tại phát ra từ Server Action (tránh self-toast & refetch thừa)
+        if (data?.senderId && viewer?.id && data.senderId === viewer.id) {
+          return;
+        }
         if (data?.kind === "new_reply") {
           setLiveToast(
             data.senderName
@@ -168,6 +173,7 @@ export function useThreadDiscussion({
           event: "thread_updated",
           payload: {
             kind,
+            senderId: viewer?.id,
             senderName: viewer?.displayName,
             at: Date.now(),
           } satisfies BroadcastPayload,
@@ -176,7 +182,7 @@ export function useThreadDiscussion({
         // Bỏ qua nếu WebSocket tạm gián đoạn; TanStack Query vẫn đồng bộ bình thường
       }
     },
-    [viewer?.displayName]
+    [viewer?.id, viewer?.displayName]
   );
 
   // 1. Mutation gửi lời giải mới (kèm Optimistic UI 0ms!)
@@ -233,9 +239,7 @@ export function useThreadDiscussion({
         queryClient.setQueryData(queryKey, ctx.previous);
       }
     },
-    onSuccess: async () => {
-      await broadcastUpdate("new_reply");
-    },
+    // Server Action (createReplyAction) đã phát broadcast tới các client khác — không gửi trùng phía client
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey });
     },
@@ -322,9 +326,7 @@ export function useThreadDiscussion({
         queryClient.setQueryData(queryKey, ctx.previous);
       }
     },
-    onSuccess: async () => {
-      await broadcastUpdate("answer_accepted");
-    },
+    // Server Action (acceptReplyAction) đã phát broadcast tới các client khác — không gửi trùng phía client
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey });
     },

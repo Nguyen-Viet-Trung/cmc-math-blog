@@ -1,11 +1,20 @@
 "use client";
 
 import { useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import { Edit3, Eye, ImagePlus, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { compressImageToWebP, formatBytes } from "@/lib/image-compression";
-import { MathContent } from "./MathContent";
+
+const MathContent = dynamic(
+  () => import("./MathContent").then((m) => m.MathContent),
+  {
+    loading: () => (
+      <div className="h-16 animate-pulse rounded-md bg-muted/60" />
+    ),
+  }
+);
 
 const LATEX_SNIPPETS = [
   { label: "Phân số", insert: "$\\frac{a}{b}$" },
@@ -28,6 +37,7 @@ interface MathEditorProps {
   onChange: (next: string) => void;
   imageUrls: string[];
   onChangeImages: (nextUrls: string[]) => void;
+  onUploadingChange?: (uploading: boolean) => void;
   placeholder?: string;
   rows?: number;
 }
@@ -37,6 +47,7 @@ export function MathEditor({
   onChange,
   imageUrls,
   onChangeImages,
+  onUploadingChange,
   placeholder = "Nhập nội dung... Gõ công thức Toán trong cặp dấu $...$ (ví dụ $\\frac{a}{b}$) hoặc $$...$$ cho công thức riêng dòng. Bấm Ctrl+V để dán trực tiếp ảnh chụp đề/bài giải!",
   rows = 7,
 }: MathEditorProps) {
@@ -73,6 +84,7 @@ export function MathEditor({
     }
 
     setUploading(true);
+    onUploadingChange?.(true);
     setUploadError(null);
 
     try {
@@ -103,6 +115,7 @@ export function MathEditor({
       );
     } finally {
       setUploading(false);
+      onUploadingChange?.(false);
     }
   }
 

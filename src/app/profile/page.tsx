@@ -1,4 +1,4 @@
-.import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import { ChangePasswordCard } from "@/app/profile/_components/ChangePasswordCard";
 import { getCurrentUserProfile } from "@/lib/forum-service";
 import { ProfileForm } from "./ProfileForm";

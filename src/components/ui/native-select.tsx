@@ -10,6 +10,7 @@ const NativeSelect = React.forwardRef<HTMLSelectElement, NativeSelectProps>(
       <div className="relative flex w-full items-center">
         <select
           ref={ref}
+          suppressHydrationWarning
           data-slot="native-select"
           className={cn(
             "flex h-9 w-full cursor-pointer appearance-none rounded-md border border-input bg-card pl-3 pr-8 text-sm text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50",

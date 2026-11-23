@@ -45,11 +45,16 @@ export default async function CollectionDetailPage({
 }: {
   params: Promise<{ slug: string }>;
 }) {
-  const [{ slug }, user] = await Promise.all([
-    params,
-    getCurrentUserProfile(),
-  ]);
-  const col = await getCollectionDetailBySlug(slug, user?.role === "admin");
+  const { slug } = await params;
+  // Ưu tiên đọc bản công khai từ unstable_cache (0ms, không chạm cookies/DB).
+  // Chỉ gọi getCurrentUserProfile() khi không tìm thấy bản công khai (Admin xem trước bản nháp).
+  let col = await getCollectionDetailBySlug(slug, false);
+  if (!col) {
+    const user = await getCurrentUserProfile();
+    if (user?.role === "admin") {
+      col = await getCollectionDetailBySlug(slug, true);
+    }
+  }
 
   if (!col) {
     notFound();

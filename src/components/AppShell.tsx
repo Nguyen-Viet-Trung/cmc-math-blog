@@ -157,7 +157,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Menu className="h-4 w-4" />
               </Button>
 
-              <Link href="/" className="flex items-center gap-2 lg:hidden">
+              <Link
+                href="/"
+                prefetch={false}
+                className="flex items-center gap-2 lg:hidden"
+              >
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
                   <Sigma className="h-3.5 w-3.5" />
                 </span>
@@ -192,6 +196,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {user && (
                 <Link
                   href="/rewards"
+                  prefetch={false}
                   className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold tabular-nums text-bounty-foreground transition-colors hover:bg-muted sm:inline-flex"
                   title="Điểm đổi quà hiện tại"
                 >
@@ -234,7 +239,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ))}
 
               <Button asChild size="sm" className="h-8 px-3">
-                <Link href="/threads/new">
+                <Link href="/threads/new" prefetch={false}>
                   <Plus className="h-3.5 w-3.5" />
                   <span>Đăng câu hỏi</span>
                 </Link>

@@ -26,6 +26,7 @@ export function HomeRightRail({
             </h2>
             <Link
               href="/?type=challenge"
+              prefetch={false}
               className="text-xs font-medium text-primary hover:underline"
             >
               Tất cả
@@ -73,6 +74,7 @@ export function HomeRightRail({
           <h2 className="section-label">Bảng vàng</h2>
           <Link
             href="/leaderboard"
+            prefetch={false}
             className="text-xs font-medium text-primary hover:underline"
           >
             Xem tất cả
@@ -122,6 +124,7 @@ export function HomeRightRail({
           <h2 className="section-label">Đổi quà</h2>
           <Link
             href="/rewards"
+            prefetch={false}
             className="text-xs font-medium text-primary hover:underline"
           >
             Cửa hàng
@@ -138,6 +141,7 @@ export function HomeRightRail({
               <li key={r.id}>
                 <Link
                   href="/rewards"
+                  prefetch={false}
                   className="group flex items-start justify-between gap-3 py-2.5 text-xs transition-colors"
                 >
                   <div className="min-w-0">

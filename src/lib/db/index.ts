@@ -88,16 +88,18 @@ export function getSql(): SqlClient {
 
   if (!globalThis.__mathForumPgPool) {
     const { connectionString, useSsl } = sanitizePgConnectionString(rawUrl);
-    const parsedMax = Number(process.env.PG_POOL_MAX ?? 5);
+    const parsedMax = Number(process.env.PG_POOL_MAX ?? 6);
     const poolMax = Number.isFinite(parsedMax)
       ? Math.max(1, Math.min(10, Math.trunc(parsedMax)))
-      : 5;
+      : 6;
+    const idleTimeoutMillis =
+      process.env.NODE_ENV === "production" ? 30_000 : 60_000;
 
     const pool = new Pool({
       connectionString,
       ssl: useSsl ? { rejectUnauthorized: false } : false,
       max: poolMax,
-      idleTimeoutMillis: 10_000,
+      idleTimeoutMillis,
       connectionTimeoutMillis: 8_000,
       query_timeout: 8_000,
       allowExitOnIdle: true,

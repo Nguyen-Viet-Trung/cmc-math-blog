@@ -731,7 +731,7 @@ const UUID_REGEX =
  * Truy vấn siêu nhẹ cho `generateMetadata` (SEO & thẻ xem trước Zalo/Facebook)
  * mà KHÔNG làm tăng `view_count`.
  */
-export const getThreadSeoMeta = cache(
+const getCachedThreadSeoMeta = unstable_cache(
   async (
     threadId: string
   ): Promise<{
@@ -741,9 +741,6 @@ export const getThreadSeoMeta = cache(
     authorName: string;
     threadType: ThreadType;
   } | null> => {
-    if (!isDatabaseConfigured() || !UUID_REGEX.test(threadId)) {
-      return null;
-    }
     const sql = getSql();
     const rows = await sql`
       SELECT
@@ -767,6 +764,25 @@ export const getThreadSeoMeta = cache(
       authorName: String(r.author_name),
       threadType: normalizeThreadType(r.thread_type),
     };
+  },
+  ["forum-thread-seo-meta"],
+  { revalidate: 60, tags: [CACHE_TAGS.threads] }
+);
+
+export const getThreadSeoMeta = cache(
+  async (
+    threadId: string
+  ): Promise<{
+    title: string;
+    excerpt: string;
+    categoryName: string;
+    authorName: string;
+    threadType: ThreadType;
+  } | null> => {
+    if (!isDatabaseConfigured() || !UUID_REGEX.test(threadId)) {
+      return null;
+    }
+    return getCachedThreadSeoMeta(threadId);
   }
 );
 

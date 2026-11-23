@@ -1,3 +1,5 @@
+import { unstable_cache } from "next/cache";
+import { CACHE_TAGS } from "./cache-tags";
 import { getSql } from "./db";
 import { isDatabaseConfigured } from "./env";
 import {
@@ -29,6 +31,47 @@ export interface AdminDashboardCounts {
   collectionsCount: number;
 }
 
+const getCachedAdminDashboardCounts = unstable_cache(
+  async (): Promise<AdminDashboardCounts> => {
+    const sql = getSql();
+    const rows = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM public.rewards) AS rewards_count,
+        (SELECT COUNT(*)::int FROM public.redemptions) AS redemptions_count,
+        (SELECT COUNT(*)::int FROM public.redemptions WHERE status = 'pending') AS pending_redemptions_count,
+        (SELECT COUNT(*)::int FROM public.profiles) AS students_count,
+        (SELECT COUNT(*)::int FROM public.threads) AS threads_count,
+        (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
+        (SELECT COUNT(*)::int FROM public.feedbacks) AS feedbacks_count,
+        (SELECT COUNT(*)::int FROM public.feedbacks WHERE status IN ('open', 'in_progress')) AS open_feedbacks_count,
+        (SELECT COUNT(*)::int FROM public.collections) AS collections_count
+    `;
+    const r = rows[0] ?? {};
+    return {
+      rewardsCount: Number(r.rewards_count ?? 0),
+      redemptionsCount: Number(r.redemptions_count ?? 0),
+      pendingRedemptionsCount: Number(r.pending_redemptions_count ?? 0),
+      studentsCount: Number(r.students_count ?? 0),
+      threadsCount: Number(r.threads_count ?? 0),
+      repliesCount: Number(r.replies_count ?? 0),
+      feedbacksCount: Number(r.feedbacks_count ?? 0),
+      openFeedbacksCount: Number(r.open_feedbacks_count ?? 0),
+      collectionsCount: Number(r.collections_count ?? 0),
+    };
+  },
+  ["admin-dashboard-counts"],
+  {
+    revalidate: 30,
+    tags: [
+      CACHE_TAGS.rewards,
+      CACHE_TAGS.threads,
+      CACHE_TAGS.feedbacks,
+      CACHE_TAGS.collections,
+      CACHE_TAGS.leaderboard,
+    ],
+  }
+);
+
 export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
   if (!isDatabaseConfigured()) {
     return {
@@ -43,32 +86,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       collectionsCount: 0,
     };
   }
-
-  const sql = getSql();
-  const rows = await sql`
-    SELECT
-      (SELECT COUNT(*)::int FROM public.rewards) AS rewards_count,
-      (SELECT COUNT(*)::int FROM public.redemptions) AS redemptions_count,
-      (SELECT COUNT(*)::int FROM public.redemptions WHERE status = 'pending') AS pending_redemptions_count,
-      (SELECT COUNT(*)::int FROM public.profiles) AS students_count,
-      (SELECT COUNT(*)::int FROM public.threads) AS threads_count,
-      (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
-      (SELECT COUNT(*)::int FROM public.feedbacks) AS feedbacks_count,
-      (SELECT COUNT(*)::int FROM public.feedbacks WHERE status IN ('open', 'in_progress')) AS open_feedbacks_count,
-      (SELECT COUNT(*)::int FROM public.collections) AS collections_count
-  `;
-  const r = rows[0] ?? {};
-  return {
-    rewardsCount: Number(r.rewards_count ?? 0),
-    redemptionsCount: Number(r.redemptions_count ?? 0),
-    pendingRedemptionsCount: Number(r.pending_redemptions_count ?? 0),
-    studentsCount: Number(r.students_count ?? 0),
-    threadsCount: Number(r.threads_count ?? 0),
-    repliesCount: Number(r.replies_count ?? 0),
-    feedbacksCount: Number(r.feedbacks_count ?? 0),
-    openFeedbacksCount: Number(r.open_feedbacks_count ?? 0),
-    collectionsCount: Number(r.collections_count ?? 0),
-  };
+  return getCachedAdminDashboardCounts();
 }
 
 export async function listAdminRewardsPaginated(params: {

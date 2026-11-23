@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import {
   Award,
@@ -18,15 +19,22 @@ import {
 import { deleteOwnReplyAction, updateReplyAction } from "@/app/actions/forum";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MathContent } from "@/components/MathContent";
-import { MathEditor } from "@/components/MathEditor";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTimeVN } from "@/lib/format";
 import type { ReplyItem, ThreadStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+const MathEditor = dynamic(
+  () => import("@/components/MathEditor").then((m) => m.MathEditor),
+  {
+    loading: () => <Skeleton className="h-32 w-full rounded-lg" />,
+  }
+);
 
 function isEdited(createdAt: string, updatedAt?: string): boolean {
   if (!updatedAt) return false;

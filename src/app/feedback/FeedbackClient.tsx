@@ -3,16 +3,19 @@
 import { FeedbackForm } from "@/app/feedback/_components/FeedbackForm";
 import { FeedbackList } from "@/app/feedback/_components/FeedbackList";
 import { Badge } from "@/components/ui/badge";
+import { useAppSession } from "@/hooks/useAppSession";
 import type { PaginatedResult } from "@/lib/pagination";
 import type { FeedbackItem, UserProfile } from "@/lib/types";
 
 export function FeedbackClient({
-  user,
+  user: initialUser,
   initialFeedbacks,
 }: {
-  user: UserProfile | null;
+  user?: UserProfile | null;
   initialFeedbacks: PaginatedResult<FeedbackItem>;
 }) {
+  const { user: sessionUser } = useAppSession();
+  const user = initialUser ?? sessionUser;
   return (
     <div className="space-y-6">
       <header className="border-b border-border pb-4">

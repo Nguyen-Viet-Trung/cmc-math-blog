@@ -14,8 +14,8 @@ import {
 } from "@/components/ui/empty";
 import { listPublishedCollections } from "@/lib/collection-service";
 import { formatRelativeDate } from "@/lib/format";
-import { getCurrentUserProfile } from "@/lib/forum-service";
 import { cn } from "@/lib/utils";
+import { CollectionsAdminAction } from "./_components/CollectionsAdminAction";
 
 export const metadata: Metadata = {
   title: "Bộ sưu tập Chuyên đề",
@@ -32,10 +32,7 @@ const ACCENT_BAR: Record<string, string> = {
 };
 
 export default async function CollectionsPage() {
-  const [collections, user] = await Promise.all([
-    listPublishedCollections(),
-    getCurrentUserProfile(),
-  ]);
+  const collections = await listPublishedCollections();
 
   return (
     <div className="mx-auto flex max-w-5xl flex-col gap-6">
@@ -52,11 +49,7 @@ export default async function CollectionsPage() {
           <span className="text-xs font-medium tabular-nums text-muted-foreground">
             {collections.length} chuyên đề
           </span>
-          {user?.role === "admin" && (
-            <Button asChild size="sm" variant="outline">
-              <Link href="/admin">Quản lý Chuyên đề</Link>
-            </Button>
-          )}
+          <CollectionsAdminAction label="Quản lý Chuyên đề" />
         </div>
       </header>
 
@@ -76,13 +69,11 @@ export default async function CollectionsPage() {
           </EmptyHeader>
           <EmptyContent>
             <Button asChild size="sm">
-              <Link href="/">Quay lại Diễn đàn</Link>
+              <Link href="/" prefetch={false}>
+                Quay lại Diễn đàn
+              </Link>
             </Button>
-            {user?.role === "admin" && (
-              <Button asChild size="sm" variant="outline">
-                <Link href="/admin">Tạo chuyên đề đầu tiên</Link>
-              </Button>
-            )}
+            <CollectionsAdminAction label="Tạo chuyên đề đầu tiên" />
           </EmptyContent>
         </Empty>
       ) : (

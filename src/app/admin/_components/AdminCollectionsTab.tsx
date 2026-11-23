@@ -374,7 +374,7 @@ export function AdminCollectionsTab({
 
                   <div className="flex flex-wrap items-center gap-1.5">
                     <Button asChild size="sm" variant="ghost">
-                      <Link href={`/collections/${col.slug}`}>
+                      <Link href={`/collections/${col.slug}`} prefetch={false}>
                         <ExternalLink className="h-3.5 w-3.5" />
                         Xem
                       </Link>
@@ -427,6 +427,7 @@ export function AdminCollectionsTab({
                           </span>
                           <Link
                             href={`/threads/${th.id}`}
+                            prefetch={false}
                             className="font-medium text-foreground hover:text-primary"
                           >
                             {th.title}

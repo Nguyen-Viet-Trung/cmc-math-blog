@@ -76,10 +76,15 @@ export function ThreadInteractive({
     text: string;
     seq: number;
   } | null>(null);
+  const [clientNowMs, setClientNowMs] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     text: string;
   } | null>(null);
+
+  useEffect(() => {
+    setClientNowMs(Date.now());
+  }, []);
 
   const viewTrackedRef = useRef<string | null>(null);
   useEffect(() => {
@@ -365,7 +370,12 @@ export function ThreadInteractive({
                 <Badge variant={isBlindChallenge ? "bounty" : "outline"}>
                   <Clock className="h-3 w-3" />
                   {isBlindChallenge
-                    ? formatRemainingTime(discussion.challengeEndsAt)
+                    ? clientNowMs !== null
+                      ? formatRemainingTime(
+                          discussion.challengeEndsAt,
+                          clientNowMs
+                        )
+                      : `Hạn nộp: ${formatDateTimeVN(discussion.challengeEndsAt)}`
                     : `Đã công bố (${formatDateTimeVN(discussion.challengeEndsAt)})`}
                 </Badge>
               )}
@@ -400,6 +410,7 @@ export function ThreadInteractive({
                 <Link
                   key={col.id}
                   href={`/collections/${col.slug}`}
+                  prefetch={false}
                   className="rounded border border-primary/25 bg-primary/5 px-2 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
                 >
                   {col.title}

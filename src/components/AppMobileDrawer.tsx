@@ -53,6 +53,7 @@ export function AppMobileDrawer({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 aria-current={active ? "page" : undefined}
                 onClick={() => onOpenChange(false)}
                 className={cn(
@@ -79,6 +80,7 @@ export function AppMobileDrawer({
               <p className="section-label mb-1 px-2.5">Quản trị</p>
               <Link
                 href="/admin"
+                prefetch={false}
                 onClick={() => onOpenChange(false)}
                 className={cn(
                   "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors",
@@ -99,6 +101,7 @@ export function AppMobileDrawer({
             <div className="flex items-center justify-between gap-2 px-1">
               <Link
                 href="/profile"
+                prefetch={false}
                 onClick={() => onOpenChange(false)}
                 className="flex min-w-0 items-center gap-2"
               >

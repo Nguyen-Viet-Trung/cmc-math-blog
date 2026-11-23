@@ -48,6 +48,7 @@ export function AppSidebar({
       >
         <Link
           href="/"
+          prefetch={false}
           title={`${siteName} — CMA MATHS CLUB blog`}
           className="flex min-w-0 items-center gap-2.5"
         >
@@ -77,6 +78,7 @@ export function AppSidebar({
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 aria-current={active ? "page" : undefined}
                 title={collapsed ? item.label : undefined}
                 className={cn(

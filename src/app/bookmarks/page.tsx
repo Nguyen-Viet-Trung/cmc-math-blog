@@ -20,7 +20,7 @@ import {
 import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
 import { listUserBookmarksPaginated } from "@/lib/collection-service";
 import { formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
-import { getCurrentUserProfile } from "@/lib/forum-service";
+import { getCurrentUserId } from "@/lib/forum-service";
 import { normalizePagination } from "@/lib/pagination";
 import { BookmarkRemoveButton } from "./_components/BookmarkRemoveButton";
 
@@ -43,9 +43,11 @@ export default async function BookmarksPage({
 }: {
   searchParams: Promise<{ page?: string; pageSize?: string }>;
 }) {
-  const [user, sp] = await Promise.all([getCurrentUserProfile(), searchParams]);
+  // Dùng getCurrentUserId() (JWKS cục bộ ~3ms, 0 DB query) thay vì getCurrentUserProfile()
+  // để cắt một nửa số vòng truy vấn Postgres khi mở /bookmarks.
+  const [userId, sp] = await Promise.all([getCurrentUserId(), searchParams]);
 
-  if (!user) {
+  if (!userId) {
     return (
       <div className="mx-auto max-w-xl">
         <Empty className="border-solid py-12">
@@ -61,7 +63,9 @@ export default async function BookmarksPage({
           </EmptyHeader>
           <EmptyContent>
             <Button asChild size="sm">
-              <Link href="/login?next=/bookmarks">Đăng nhập ngay</Link>
+              <Link href="/login?next=/bookmarks" prefetch={false}>
+                Đăng nhập ngay
+              </Link>
             </Button>
           </EmptyContent>
         </Empty>
@@ -70,7 +74,7 @@ export default async function BookmarksPage({
   }
 
   const { page, pageSize } = normalizePagination(sp.page, sp.pageSize, 15, 50);
-  const paginated = await listUserBookmarksPaginated(user.id, page, pageSize);
+  const paginated = await listUserBookmarksPaginated(userId, page, pageSize);
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">

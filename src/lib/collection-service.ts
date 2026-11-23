@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { CACHE_TAGS } from "./cache-tags";
 import { getSql } from "./db";
@@ -96,11 +97,10 @@ export async function listPublishedCollections(): Promise<CollectionSummary[]> {
   return getCachedPublishedCollections();
 }
 
-export async function getCollectionDetailBySlug(
-  slug: string,
-  includeUnpublished = false
+async function fetchCollectionDetailFromDb(
+  normalizedSlug: string,
+  includeUnpublished: boolean
 ): Promise<CollectionDetail | null> {
-  if (!isDatabaseConfigured() || !slug.trim()) return null;
   const sql = getSql();
 
   const colRows = await sql`
@@ -109,7 +109,7 @@ export async function getCollectionDetailBySlug(
       p.display_name AS created_by_name
     FROM public.collections col
     LEFT JOIN public.profiles p ON p.id = col.created_by
-    WHERE col.slug = ${slug.trim().toLowerCase()}
+    WHERE col.slug = ${normalizedSlug}
       AND (${includeUnpublished}::boolean OR col.is_published = TRUE)
     LIMIT 1
   `;
@@ -175,6 +175,27 @@ export async function getCollectionDetailBySlug(
   };
 }
 
+const getCachedPublishedCollectionDetail = unstable_cache(
+  async (normalizedSlug: string): Promise<CollectionDetail | null> =>
+    fetchCollectionDetailFromDb(normalizedSlug, false),
+  ["forum-published-collection-detail"],
+  { revalidate: 120, tags: [CACHE_TAGS.collections, CACHE_TAGS.threads] }
+);
+
+export const getCollectionDetailBySlug = cache(
+  async (
+    slug: string,
+    includeUnpublished = false
+  ): Promise<CollectionDetail | null> => {
+    const normalizedSlug = slug.trim().toLowerCase();
+    if (!isDatabaseConfigured() || !normalizedSlug) return null;
+    if (!includeUnpublished) {
+      return getCachedPublishedCollectionDetail(normalizedSlug);
+    }
+    return fetchCollectionDetailFromDb(normalizedSlug, true);
+  }
+);
+
 export interface AdminCollectionWithThreads extends CollectionSummary {
   threads: {
     id: string;
@@ -207,6 +228,12 @@ export async function listCollectionsForAdmin(): Promise<
       LIMIT 100
     `,
     sql`
+      WITH top_cols AS (
+        SELECT id
+        FROM public.collections
+        ORDER BY updated_at DESC, created_at DESC
+        LIMIT 100
+      )
       SELECT
         ct.collection_id,
         ct.sort_order,
@@ -214,7 +241,8 @@ export async function listCollectionsForAdmin(): Promise<
         t.id AS thread_id,
         t.title AS thread_title,
         t.thread_type
-      FROM public.collection_threads ct
+      FROM top_cols tc
+      JOIN public.collection_threads ct ON ct.collection_id = tc.id
       JOIN public.threads t ON t.id = ct.thread_id
       ORDER BY ct.sort_order ASC, ct.added_at ASC
     `,

@@ -12,10 +12,18 @@ import {
   getSiteSettings,
 } from "@/lib/forum-service";
 import { AdminDashboardClient } from "./AdminDashboardClient";
+import { normalizeAdminTab } from "./_components/AdminSubNav";
 
-export default async function AdminPortalPage() {
+export default async function AdminPortalPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ tab?: string; create?: string }>;
+}) {
   const dbReady = isDatabaseConfigured();
-  const user = await getCurrentUserProfile();
+  const [user, sp] = await Promise.all([
+    getCurrentUserProfile(),
+    searchParams,
+  ]);
 
   if (dbReady && (!user || user.role !== "admin")) {
     return (
@@ -38,8 +46,11 @@ export default async function AdminPortalPage() {
     );
   }
 
+  const initialTab = normalizeAdminTab(sp.tab);
+  const autoOpenCreate = sp.create === "1";
+
   // Chỉ tải cấu hình, bộ đếm tổng quan và tab mặc định (Quà tặng) ở SSR;
-  // 5 tab còn lại được code-split và lazy-fetch qua /api/admin/list khi Admin mở tab.
+  // các tab khác được code-split và lazy-fetch qua /api/admin/list khi Admin mở tab.
   const [settings, counts, initialRewards] = await Promise.all([
     getSiteSettings(),
     getAdminDashboardCounts(),
@@ -52,6 +63,8 @@ export default async function AdminPortalPage() {
       settings={settings}
       counts={counts}
       initialRewards={initialRewards}
+      initialTab={initialTab}
+      autoOpenCreate={autoOpenCreate}
     />
   );
 }

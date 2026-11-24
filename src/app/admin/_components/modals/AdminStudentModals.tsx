@@ -16,7 +16,12 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/native-select";
 import { toDateInputValue } from "@/lib/format";
+import {
+  POINT_ADJUSTMENT_SCOPE_LABELS,
+  type PointAdjustmentScope,
+} from "@/lib/rules";
 import type { UserProfile } from "@/lib/types";
 import type { AdminNotice } from "../AdminRewardsTab";
 
@@ -38,6 +43,7 @@ export function AdminStudentModals({
   onNotice: (n: AdminNotice) => void;
 }) {
   const [pointDelta, setPointDelta] = useState("10");
+  const [pointScope, setPointScope] = useState<PointAdjustmentScope>("both");
   const [pointReason, setPointReason] = useState("");
   const [joinDateValue, setJoinDateValue] = useState("");
   const [tempPassword, setTempPassword] = useState("");
@@ -48,6 +54,7 @@ export function AdminStudentModals({
     setBusy(false);
     if (modal.kind === "points") {
       setPointDelta("10");
+      setPointScope("both");
       setPointReason("");
     } else if (modal.kind === "joinedDate") {
       setJoinDateValue(toDateInputValue(modal.student.joinedAt));
@@ -65,6 +72,7 @@ export function AdminStudentModals({
         studentId: modal.student.id,
         deltaPoints: Number(pointDelta),
         reason: pointReason,
+        scope: pointScope,
       });
       if (!res.ok) {
         onNotice({ type: "error", text: res.error || "Lỗi điều chỉnh điểm." });
@@ -161,16 +169,52 @@ export function AdminStudentModals({
         {modal?.kind === "points" && (
           <form onSubmit={handleSubmitPoints} className="space-y-4">
             <div className="space-y-1 pr-6">
-              <DialogTitle>Điều chỉnh điểm đổi quà</DialogTitle>
+              <DialogTitle>Điều chỉnh điểm thành viên</DialogTitle>
               <DialogDescription>
-                {modal.student.displayName} ({modal.student.email}) · Hiện có{" "}
-                <strong className="tabular-nums text-bounty">
-                  {modal.student.pointsBalance}đ
-                </strong>
+                {modal.student.displayName} ({modal.student.email})
               </DialogDescription>
             </div>
 
+            <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-border bg-muted/35 p-3 text-xs tabular-nums">
+              <div>
+                <span className="block text-[11px] text-muted-foreground">
+                  Điểm khả dụng (đổi quà)
+                </span>
+                <strong className="text-sm font-bold text-bounty">
+                  {modal.student.pointsBalance}đ
+                </strong>
+              </div>
+              <div className="border-l border-border pl-3">
+                <span className="block text-[11px] text-muted-foreground">
+                  Tổng điểm đạt được
+                </span>
+                <strong className="text-sm font-bold text-foreground">
+                  {modal.student.totalEarnedPoints}đ
+                </strong>
+              </div>
+            </div>
+
             <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="modal-point-scope">Phạm vi điều chỉnh</Label>
+                <NativeSelect
+                  id="modal-point-scope"
+                  value={pointScope}
+                  onChange={(e) =>
+                    setPointScope(e.target.value as PointAdjustmentScope)
+                  }
+                  className="text-xs font-medium"
+                >
+                  {(
+                    ["both", "balance_only", "earned_only"] as PointAdjustmentScope[]
+                  ).map((key) => (
+                    <option key={key} value={key}>
+                      {POINT_ADJUSTMENT_SCOPE_LABELS[key]}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+
               <div className="space-y-1.5">
                 <Label htmlFor="modal-point-delta">
                   Số điểm cộng (+) hoặc trừ (-)

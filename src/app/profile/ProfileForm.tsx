@@ -1,8 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Calendar, Check, Loader2, Sparkles, User } from "lucide-react";
+import {
+  Award,
+  Calendar,
+  Check,
+  CheckCircle2,
+  Loader2,
+  Sparkles,
+  Trophy,
+  User,
+} from "lucide-react";
 import { updateProfileAction } from "@/app/actions/auth";
 import { ImageUploader } from "@/components/ImageUploader";
 import { Alert } from "@/components/ui/alert";
@@ -75,6 +85,46 @@ export function ProfileForm({ user }: { user: UserProfile }) {
                 {formatDateVN(user.joinedAt)}
               </strong>
             </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <Link
+            href="/rewards"
+            prefetch={false}
+            className="rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 transition-colors hover:border-bounty/50 hover:bg-muted/50"
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <Award className="h-3.5 w-3.5 text-bounty" />
+              Điểm khả dụng (đổi quà)
+            </span>
+            <p className="mt-1 text-lg font-bold tabular-nums text-bounty">
+              {user.pointsBalance}đ
+            </p>
+          </Link>
+
+          <Link
+            href="/leaderboard"
+            prefetch={false}
+            className="rounded-lg border border-border bg-muted/30 px-3.5 py-2.5 transition-colors hover:border-primary/40 hover:bg-muted/50"
+          >
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <Trophy className="h-3.5 w-3.5 text-primary" />
+              Tổng điểm đạt được
+            </span>
+            <p className="mt-1 text-lg font-bold tabular-nums text-foreground">
+              {user.totalEarnedPoints}đ
+            </p>
+          </Link>
+
+          <div className="rounded-lg border border-border bg-muted/30 px-3.5 py-2.5">
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <CheckCircle2 className="h-3.5 w-3.5 text-success" />
+              Lời giải đúng
+            </span>
+            <p className="mt-1 text-lg font-bold tabular-nums text-success">
+              {user.solvedCount} bài
+            </p>
           </div>
         </div>
 

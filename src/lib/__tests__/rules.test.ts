@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   analyzeAdminReplyAudits,
+  computeAdminPointAdjustment,
   isValidThreadType,
   normalizeNickname,
   normalizeThreadType,
@@ -427,5 +428,89 @@ describe("sanitizeRedirectPath — chống Open Redirect trên /auth/callback", 
     expect(sanitizeRedirectPath("/\\evil.com")).toBe("/");
     expect(sanitizeRedirectPath("https://evil.com")).toBe("/");
     expect(sanitizeRedirectPath("/ok\r\nSet-Cookie: x=1")).toBe("/");
+  });
+});
+
+describe("computeAdminPointAdjustment — phân tách Điểm khả dụng & Tổng điểm đạt được", () => {
+  it("mặc định (both) cộng/trừ đồng thời cả điểm khả dụng và tổng điểm đạt được, chặn âm", () => {
+    expect(
+      computeAdminPointAdjustment({
+        currentBalance: 20,
+        currentEarned: 50,
+        deltaPoints: 15,
+      })
+    ).toEqual({
+      ok: true,
+      scope: "both",
+      nextBalance: 35,
+      nextEarned: 65,
+      balanceDelta: 15,
+      earnedDelta: 15,
+      ledgerAmount: 15,
+    });
+
+    // Khi học sinh đã đổi hết điểm khả dụng (0đ) nhưng vẫn còn tổng điểm tích lũy (50đ) -> vẫn trừ được tổng điểm đạt được
+    expect(
+      computeAdminPointAdjustment({
+        currentBalance: 0,
+        currentEarned: 50,
+        deltaPoints: -20,
+        scope: "both",
+      })
+    ).toEqual({
+      ok: true,
+      scope: "both",
+      nextBalance: 0,
+      nextEarned: 30,
+      balanceDelta: 0,
+      earnedDelta: -20,
+      ledgerAmount: -20,
+    });
+  });
+
+  it("hỗ trợ điều chỉnh riêng Điểm khả dụng (balance_only) hoặc riêng Tổng điểm đạt được (earned_only)", () => {
+    expect(
+      computeAdminPointAdjustment({
+        currentBalance: 10,
+        currentEarned: 100,
+        deltaPoints: 30,
+        scope: "balance_only",
+      })
+    ).toEqual({
+      ok: true,
+      scope: "balance_only",
+      nextBalance: 40,
+      nextEarned: 100,
+      balanceDelta: 30,
+      earnedDelta: 0,
+      ledgerAmount: 30,
+    });
+
+    expect(
+      computeAdminPointAdjustment({
+        currentBalance: 10,
+        currentEarned: 100,
+        deltaPoints: -25,
+        scope: "earned_only",
+      })
+    ).toEqual({
+      ok: true,
+      scope: "earned_only",
+      nextBalance: 10,
+      nextEarned: 75,
+      balanceDelta: 0,
+      earnedDelta: -25,
+      ledgerAmount: -25,
+    });
+
+    // Từ chối khi trừ điểm nhưng chỉ số thuộc phạm vi đã về 0
+    expect(
+      computeAdminPointAdjustment({
+        currentBalance: 0,
+        currentEarned: 100,
+        deltaPoints: -10,
+        scope: "balance_only",
+      }).ok
+    ).toBe(false);
   });
 });

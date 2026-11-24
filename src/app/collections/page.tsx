@@ -73,7 +73,7 @@ export default async function CollectionsPage() {
                 Quay lại Diễn đàn
               </Link>
             </Button>
-            <CollectionsAdminAction label="Tạo chuyên đề đầu tiên" />
+            <CollectionsAdminAction label="Tạo chuyên đề đầu tiên" openCreate />
           </EmptyContent>
         </Empty>
       ) : (

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { X } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
@@ -78,14 +78,29 @@ export function AdminDashboardClient({
   settings,
   counts,
   initialRewards,
+  initialTab = "rewards",
+  autoOpenCreate = false,
 }: {
   isDemo: boolean;
   settings: SiteSettings;
   counts: AdminDashboardCounts;
   initialRewards: PaginatedResult<RewardItem>;
+  initialTab?: AdminTabId;
+  autoOpenCreate?: boolean;
 }) {
-  const [tab, setTab] = useState<AdminTabId>("rewards");
+  const [tab, setTab] = useState<AdminTabId>(initialTab);
+  const [pendingCreate, setPendingCreate] = useState(autoOpenCreate);
   const [notice, setNotice] = useState<AdminNotice | null>(null);
+
+  useEffect(() => {
+    setTab(initialTab);
+  }, [initialTab]);
+
+  useEffect(() => {
+    if (autoOpenCreate) {
+      setPendingCreate(true);
+    }
+  }, [autoOpenCreate]);
   const [replySearch, setReplySearch] = useState("");
   const [detectedSuspiciousCount, setDetectedSuspiciousCount] = useState<
     number | null
@@ -106,7 +121,12 @@ export function AdminDashboardClient({
 
   function handleSelectTab(next: AdminTabId) {
     setTab(next);
+    setPendingCreate(false);
     setNotice(null);
+    if (typeof window !== "undefined") {
+      const nextUrl = next === "rewards" ? "/admin" : `/admin?tab=${next}`;
+      window.history.replaceState(null, "", nextUrl);
+    }
   }
 
   return (
@@ -232,7 +252,20 @@ export function AdminDashboardClient({
             />
           )}
           {tab === "collections" && (
-            <AdminCollectionsTab onNotice={setNotice} />
+            <AdminCollectionsTab
+              onNotice={setNotice}
+              autoOpenCreate={pendingCreate}
+              onConsumedAutoOpen={() => {
+                setPendingCreate(false);
+                if (typeof window !== "undefined") {
+                  window.history.replaceState(
+                    null,
+                    "",
+                    "/admin?tab=collections"
+                  );
+                }
+              }}
+            />
           )}
           {tab === "replies" && (
             <AdminRepliesAuditTab

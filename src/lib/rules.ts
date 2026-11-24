@@ -827,3 +827,93 @@ export function extractMentionedNames(content: string): string[] {
   }
   return Array.from(found);
 }
+
+export type PointAdjustmentScope = "both" | "balance_only" | "earned_only";
+
+export const POINT_ADJUSTMENT_SCOPE_LABELS: Record<
+  PointAdjustmentScope,
+  string
+> = {
+  both: "Cả Điểm khả dụng & Tổng điểm đạt được",
+  balance_only: "Chỉ Điểm khả dụng (đổi quà)",
+  earned_only: "Chỉ Tổng điểm đạt được (Bảng vàng)",
+};
+
+export function normalizePointAdjustmentScope(
+  raw?: string | null
+): PointAdjustmentScope {
+  if (raw === "balance_only" || raw === "earned_only" || raw === "both") {
+    return raw;
+  }
+  return "both";
+}
+
+/**
+ * Tính toán an toàn điểm khả dụng (`points_balance`) và tổng điểm đạt được (`total_earned_points`)
+ * khi Admin điều chỉnh điểm thủ công theo phạm vi (`both` | `balance_only` | `earned_only`).
+ * - Đảm bảo cả 2 chỉ số không bao giờ âm.
+ * - Khi trừ mà cả hai chỉ số thuộc phạm vi điều chỉnh đều đã bằng 0 thì trả về lỗi rõ ràng.
+ */
+export function computeAdminPointAdjustment(input: {
+  currentBalance: number;
+  currentEarned: number;
+  deltaPoints: number;
+  scope?: PointAdjustmentScope;
+}):
+  | {
+      ok: true;
+      scope: PointAdjustmentScope;
+      nextBalance: number;
+      nextEarned: number;
+      balanceDelta: number;
+      earnedDelta: number;
+      ledgerAmount: number;
+    }
+  | { ok: false; error: string } {
+  const delta = Math.trunc(Number(input.deltaPoints));
+  if (!Number.isFinite(delta) || delta === 0) {
+    return { ok: false, error: "Số điểm điều chỉnh phải khác 0." };
+  }
+  if (Math.abs(delta) > 100_000) {
+    return { ok: false, error: "Số điểm điều chỉnh tối đa ±100.000 mỗi lần." };
+  }
+
+  const scope = normalizePointAdjustmentScope(input.scope);
+  const currentBalance = Math.max(0, Math.trunc(input.currentBalance));
+  const currentEarned = Math.max(0, Math.trunc(input.currentEarned));
+
+  const nextBalance =
+    scope === "earned_only" ? currentBalance : Math.max(0, currentBalance + delta);
+  const nextEarned =
+    scope === "balance_only" ? currentEarned : Math.max(0, currentEarned + delta);
+
+  const balanceDelta = nextBalance - currentBalance;
+  const earnedDelta = nextEarned - currentEarned;
+
+  if (balanceDelta === 0 && earnedDelta === 0 && delta < 0) {
+    const label =
+      scope === "balance_only"
+        ? "Điểm khả dụng"
+        : scope === "earned_only"
+          ? "Tổng điểm đạt được"
+          : "Điểm khả dụng và tổng điểm đạt được";
+    return { ok: false, error: `${label} hiện tại của học sinh đã bằng 0.` };
+  }
+
+  const ledgerAmount =
+    scope === "earned_only"
+      ? earnedDelta
+      : balanceDelta !== 0
+        ? balanceDelta
+        : earnedDelta;
+
+  return {
+    ok: true,
+    scope,
+    nextBalance,
+    nextEarned,
+    balanceDelta,
+    earnedDelta,
+    ledgerAmount,
+  };
+}

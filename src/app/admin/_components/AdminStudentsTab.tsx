@@ -173,7 +173,7 @@ export function AdminStudentsTab({
                   Đã giải
                 </th>
                 <th className="whitespace-nowrap px-4 py-3 text-right">
-                  Điểm
+                  Khả dụng / Tổng đạt
                 </th>
                 <th className="w-[128px] whitespace-nowrap px-4 py-3 text-right">
                   Thao tác
@@ -237,8 +237,16 @@ export function AdminStudentsTab({
                     <td className="px-3 py-3 text-center font-medium tabular-nums">
                       {s.solvedCount}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-right font-semibold tabular-nums text-bounty">
-                      {s.pointsBalance}đ
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">
+                      <p className="font-semibold text-bounty">
+                        {s.pointsBalance}đ
+                      </p>
+                      <p
+                        className="text-[11px] text-muted-foreground"
+                        title="Tổng điểm tích lũy xếp hạng Bảng vàng"
+                      >
+                        Tổng: {s.totalEarnedPoints}đ
+                      </p>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       <div className="inline-flex items-center justify-end gap-1">

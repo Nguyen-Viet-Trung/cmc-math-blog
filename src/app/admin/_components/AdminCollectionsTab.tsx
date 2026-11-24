@@ -37,8 +37,12 @@ import {
 
 export function AdminCollectionsTab({
   onNotice,
+  autoOpenCreate = false,
+  onConsumedAutoOpen,
 }: {
   onNotice: (notice: AdminNotice | null) => void;
+  autoOpenCreate?: boolean;
+  onConsumedAutoOpen?: () => void;
 }) {
   const router = useRouter();
   const [collections, setCollections] = useState<AdminCollectionWithThreads[]>(
@@ -52,6 +56,13 @@ export function AdminCollectionsTab({
   const [attachTargetId, setAttachTargetId] = useState<string | null>(null);
   const [deleteTarget, setDeleteTarget] =
     useState<AdminCollectionWithThreads | null>(null);
+
+  useEffect(() => {
+    if (!autoOpenCreate) return;
+    setEditingCollection(null);
+    setFormOpen(true);
+    onConsumedAutoOpen?.();
+  }, [autoOpenCreate, onConsumedAutoOpen]);
 
   const fetchCollections = useCallback(async () => {
     setLoading(true);

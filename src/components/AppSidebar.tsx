@@ -161,7 +161,7 @@ export function AppSidebar({
               <Link
                 href="/profile"
                 prefetch={false}
-                title={`${user.displayName} (${user.pointsBalance} điểm)`}
+                title={`${user.displayName} (Khả dụng: ${user.pointsBalance}đ · Tổng đạt: ${user.totalEarnedPoints}đ)`}
               >
                 <Avatar className="h-7 w-7">
                   <AvatarImage

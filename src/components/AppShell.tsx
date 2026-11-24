@@ -198,7 +198,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   href="/rewards"
                   prefetch={false}
                   className="hidden items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold tabular-nums text-bounty-foreground transition-colors hover:bg-muted sm:inline-flex"
-                  title="Điểm đổi quà hiện tại"
+                  title={`Điểm khả dụng đổi quà: ${user.pointsBalance}đ · Tổng điểm tích lũy: ${user.totalEarnedPoints}đ`}
                 >
                   <Award className="h-3.5 w-3.5 text-bounty" />
                   <span>{user.pointsBalance} điểm</span>

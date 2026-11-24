@@ -14,11 +14,14 @@ import { broadcastThreadEventFromServer } from "@/lib/realtime-broadcast";
 import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import {
+  POINT_ADJUSTMENT_SCOPE_LABELS,
+  computeAdminPointAdjustment,
   isValidThreadType,
   parseClubJoinedDate,
   validateChallengeDeadline,
   validateRedemptionTransition,
   validateThreadAuthorReward,
+  type PointAdjustmentScope,
   type RedemptionStatus,
 } from "@/lib/rules";
 import type { ThreadType } from "@/lib/types";
@@ -257,6 +260,7 @@ export async function adjustStudentPointsAction(input: {
   studentId: string;
   deltaPoints: number;
   reason: string;
+  scope?: PointAdjustmentScope;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
     const admin = await requireAdmin();
@@ -273,37 +277,44 @@ export async function adjustStudentPointsAction(input: {
     const sql = getSql();
     await sql.begin(async (tx) => {
       const rows = await tx`
-        SELECT points_balance FROM public.profiles WHERE id = ${input.studentId} FOR UPDATE
+        SELECT points_balance, total_earned_points
+        FROM public.profiles
+        WHERE id = ${input.studentId}
+        FOR UPDATE
       `;
       if (rows.length === 0) throw new Error("Không tìm thấy học sinh.");
 
-      const currentBalance = Number(rows[0].points_balance);
-      const nextBalance = Math.max(0, currentBalance + delta);
-      const actualDelta = nextBalance - currentBalance;
-
-      if (actualDelta === 0 && delta < 0) {
-        throw new Error("Điểm hiện tại của học sinh đã bằng 0.");
+      const calc = computeAdminPointAdjustment({
+        currentBalance: Number(rows[0].points_balance ?? 0),
+        currentEarned: Number(rows[0].total_earned_points ?? 0),
+        deltaPoints: delta,
+        scope: input.scope,
+      });
+      if (!calc.ok) {
+        throw new Error(calc.error);
       }
 
       await tx`
         UPDATE public.profiles
         SET
-          points_balance = ${nextBalance},
-          total_earned_points = CASE
-            WHEN ${actualDelta} > 0 THEN total_earned_points + ${actualDelta}
-            ELSE total_earned_points
-          END,
+          points_balance = ${calc.nextBalance},
+          total_earned_points = ${calc.nextEarned},
           updated_at = NOW()
         WHERE id = ${input.studentId}
       `;
+
+      const scopeSuffix =
+        calc.scope === "both"
+          ? ""
+          : ` [${POINT_ADJUSTMENT_SCOPE_LABELS[calc.scope]}]`;
 
       await tx`
         INSERT INTO public.point_transactions (user_id, amount, type, reason, created_by)
         VALUES (
           ${input.studentId},
-          ${actualDelta},
-          ${actualDelta > 0 ? "admin_grant" : "admin_deduct"},
-          ${`Admin điều chỉnh: ${reason}`},
+          ${calc.ledgerAmount},
+          ${calc.ledgerAmount > 0 ? "admin_grant" : "admin_deduct"},
+          ${`Admin điều chỉnh${scopeSuffix}: ${reason}`},
           ${admin.id}
         )
       `;
@@ -312,6 +323,9 @@ export async function adjustStudentPointsAction(input: {
     revalidateTag(CACHE_TAGS.leaderboard);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
+    revalidatePath("/rewards");
+    revalidatePath("/profile");
+    revalidatePath(`/members/${input.studentId}`);
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi điều chỉnh điểm." };

@@ -119,7 +119,10 @@ export function AppMobileDrawer({
                     {user.displayName}
                   </p>
                   <p className="text-[11px] font-medium tabular-nums text-bounty">
-                    {user.pointsBalance} điểm
+                    {user.pointsBalance}đ khả dụng ·{" "}
+                    <span className="text-muted-foreground">
+                      {user.totalEarnedPoints}đ tổng
+                    </span>
                   </p>
                 </div>
               </Link>

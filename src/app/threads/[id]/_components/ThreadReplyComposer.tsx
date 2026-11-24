@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { CornerDownRight, Loader2, Send, X } from "lucide-react";
+import { Check, CornerDownRight, Loader2, Send, X } from "lucide-react";
+import { DraftRestoreNotice } from "@/components/DraftRestoreNotice";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { buildReplyDraftKey, useMathDraft } from "@/hooks/useMathDraft";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import type { ReplyItem, ThreadStatus, UserProfile } from "@/lib/types";
 
 const MathEditor = dynamic(
@@ -56,6 +59,30 @@ export function ThreadReplyComposer({
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const handleRestoreDraft = useCallback((savedContent: string) => {
+    if (typeof savedContent === "string") {
+      setContent(savedContent);
+    }
+  }, []);
+
+  const { restoredAt, hasSavedDraft, dismissRestoredNotice, clearDraft } =
+    useMathDraft<string>({
+      storageKey: viewer?.id ? buildReplyDraftKey(threadId, viewer.id) : "",
+      value: content,
+      enabled:
+        isFeatureEnabled("draftAutoSave") &&
+        Boolean(viewer?.id) &&
+        status !== "closed" &&
+        !isBlindChallenge,
+      isEmpty: (val) => !val.trim(),
+      onRestore: handleRestoreDraft,
+    });
+
+  function handleDiscardDraft() {
+    clearDraft();
+    setContent("");
+  }
+
   useEffect(() => {
     if (!replyTarget) return;
     const mentionTag = `@[${replyTarget.author.displayName}] `;
@@ -85,6 +112,7 @@ export function ThreadReplyComposer({
         imageUrls,
         parentReplyId: replyTarget?.parentReplyId ?? replyTarget?.id ?? null,
       });
+      clearDraft();
       setContent("");
       setImageUrls([]);
       onClearReplyTarget();
@@ -139,6 +167,14 @@ export function ThreadReplyComposer({
             </Alert>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
+              {restoredAt !== null && (
+                <DraftRestoreNotice
+                  restoredAt={restoredAt}
+                  onDiscard={handleDiscardDraft}
+                  onDismiss={dismissRestoredNotice}
+                />
+              )}
+
               {replyTarget && (
                 <div className="flex items-center justify-between gap-2 rounded-md border border-primary/25 bg-primary/5 px-3 py-2 text-xs">
                   <span className="inline-flex min-w-0 items-center gap-1.5 text-foreground">
@@ -175,7 +211,18 @@ export function ThreadReplyComposer({
                 }
               />
               {error && <Alert variant="destructive">{error}</Alert>}
-              <div className="flex justify-end">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs text-muted-foreground">
+                  {hasSavedDraft && (
+                    <span className="inline-flex items-center gap-1">
+                      <Check
+                        className="h-3.5 w-3.5 text-success"
+                        aria-hidden="true"
+                      />
+                      Đã tự động lưu nháp
+                    </span>
+                  )}
+                </div>
                 <Button type="submit" disabled={isSubmitting || isUploading}>
                   {isSubmitting ? (
                     <Loader2 className="h-4 w-4 animate-spin" />

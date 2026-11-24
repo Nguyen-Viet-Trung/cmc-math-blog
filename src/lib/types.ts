@@ -1,3 +1,7 @@
+import type { NotificationPrefs } from "./notification-prefs";
+
+export type { NotificationPrefs };
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -11,6 +15,7 @@ export interface UserProfile {
   totalEarnedPoints: number;
   solvedCount: number;
   isBanned: boolean;
+  notificationPrefs?: NotificationPrefs;
   joinedAt: string;
   createdAt: string;
 }
@@ -40,6 +45,7 @@ export interface ForumDocument {
 
 export type ThreadType = "question" | "news" | "research" | "challenge";
 export type ThreadStatus = "open" | "solved" | "closed";
+export type HomeThreadStatusFilter = "all" | "open" | "unanswered" | "solved";
 
 export interface ThreadSummary {
   id: string;

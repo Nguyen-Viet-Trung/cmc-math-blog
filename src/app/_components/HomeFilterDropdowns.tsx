@@ -4,8 +4,9 @@ import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CircleDot, Filter, Layers, RotateCcw } from "lucide-react";
 import { NativeSelect } from "@/components/ui/native-select";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { buildHomeFilterUrl } from "@/lib/format";
-import type { Category, ThreadType } from "@/lib/types";
+import type { Category, HomeThreadStatusFilter, ThreadType } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 const TYPE_OPTIONS: { key: ThreadType | "all"; label: string }[] = [
@@ -16,16 +17,17 @@ const TYPE_OPTIONS: { key: ThreadType | "all"; label: string }[] = [
   { key: "research", label: "Research" },
 ];
 
-const STATUS_OPTIONS: { key: "all" | "open" | "solved"; label: string }[] = [
+const BASE_STATUS_OPTIONS: { key: HomeThreadStatusFilter; label: string }[] = [
   { key: "all", label: "Mọi trạng thái" },
   { key: "open", label: "Chờ giải" },
+  { key: "unanswered", label: "Chưa có lời giải" },
   { key: "solved", label: "Đã giải" },
 ];
 
 interface HomeFilterDropdownsProps {
   activeType: ThreadType | "all";
   activeCat: string;
-  activeStatus: "all" | "open" | "solved";
+  activeStatus: HomeThreadStatusFilter;
   searchQuery: string;
   pageSize: number;
   categories: Category[];
@@ -41,6 +43,10 @@ export function HomeFilterDropdowns({
 }: HomeFilterDropdownsProps) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const unansweredEnabled = isFeatureEnabled("unansweredFilter");
+  const statusOptions = unansweredEnabled
+    ? BASE_STATUS_OPTIONS
+    : BASE_STATUS_OPTIONS.filter((opt) => opt.key !== "unanswered");
 
   const showStatusDropdown = activeType === "all" || activeType === "question";
   const hasDropdownFilter =
@@ -51,7 +57,7 @@ export function HomeFilterDropdowns({
   function navigateWith(next: {
     type?: ThreadType | "all";
     cat?: string;
-    status?: "all" | "open" | "solved";
+    status?: HomeThreadStatusFilter;
   }) {
     const resolvedType = next.type ?? activeType;
     const resolvedCat = next.cat !== undefined ? next.cat : activeCat;
@@ -144,7 +150,7 @@ export function HomeFilterDropdowns({
 
       {/* Dropdown 3: Trạng thái bài viết */}
       {showStatusDropdown && (
-        <div className="relative w-full sm:w-[144px]">
+        <div className="relative w-full sm:w-[164px]">
           <CircleDot
             aria-hidden="true"
             className={cn(
@@ -157,7 +163,7 @@ export function HomeFilterDropdowns({
             value={activeStatus}
             onChange={(e) =>
               navigateWith({
-                status: e.target.value as "all" | "open" | "solved",
+                status: e.target.value as HomeThreadStatusFilter,
               })
             }
             className={cn(
@@ -167,7 +173,7 @@ export function HomeFilterDropdowns({
                 : "text-muted-foreground"
             )}
           >
-            {STATUS_OPTIONS.map((opt) => (
+            {statusOptions.map((opt) => (
               <option key={opt.key} value={opt.key}>
                 {opt.label}
               </option>

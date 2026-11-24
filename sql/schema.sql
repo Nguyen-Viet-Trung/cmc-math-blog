@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   total_earned_points INTEGER NOT NULL DEFAULT 0 CHECK (total_earned_points >= 0),
   solved_count INTEGER NOT NULL DEFAULT 0 CHECK (solved_count >= 0),
   is_banned BOOLEAN NOT NULL DEFAULT FALSE,
+  notification_prefs JSONB NOT NULL DEFAULT '{"replies":true,"mentions":true,"follows":true,"campaigns":true,"awards":true,"digest":true}'::jsonb,
   joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -254,6 +255,9 @@ CREATE TABLE IF NOT EXISTS public.user_campaign_awards (
 );
 
 -- Nâng cấp idempotent cho các DB đã khởi tạo trước đó
+ALTER TABLE public.profiles
+  ADD COLUMN IF NOT EXISTS notification_prefs JSONB NOT NULL DEFAULT '{"replies":true,"mentions":true,"follows":true,"campaigns":true,"awards":true,"digest":true}'::jsonb;
+
 ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS challenge_ends_at TIMESTAMPTZ;
 ALTER TABLE public.threads DROP CONSTRAINT IF EXISTS threads_thread_type_check;
 ALTER TABLE public.threads ADD CONSTRAINT threads_thread_type_check CHECK (thread_type IN ('question', 'news', 'research', 'challenge'));
@@ -304,6 +308,7 @@ CREATE INDEX IF NOT EXISTS idx_threads_cat_pinned_created ON public.threads(cate
 CREATE INDEX IF NOT EXISTS idx_threads_status_pinned_created ON public.threads(status, is_pinned DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_type_pinned_created ON public.threads(thread_type, is_pinned DESC, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_created_desc ON public.threads(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_unanswered_created ON public.threads(is_pinned DESC, created_at DESC) WHERE thread_type = 'question' AND status = 'open' AND reply_count = 0;
 CREATE INDEX IF NOT EXISTS idx_profiles_lower_display_name ON public.profiles(LOWER(display_name)) WHERE is_banned = FALSE;
 CREATE INDEX IF NOT EXISTS idx_profiles_lower_nickname ON public.profiles(LOWER(nickname)) WHERE is_banned = FALSE AND nickname <> '';
 CREATE INDEX IF NOT EXISTS idx_profiles_leaderboard_active ON public.profiles(total_earned_points DESC, solved_count DESC, created_at ASC) WHERE is_banned = FALSE AND (total_earned_points > 0 OR solved_count > 0);

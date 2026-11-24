@@ -9,8 +9,9 @@ import {
   listActiveRewards,
   listThreadsPaginated,
 } from "@/lib/forum-service";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { normalizePagination } from "@/lib/pagination";
-import type { ThreadType } from "@/lib/types";
+import type { HomeThreadStatusFilter, ThreadType } from "@/lib/types";
 
 export default async function HomePage({
   searchParams,
@@ -33,8 +34,11 @@ export default async function HomePage({
       params.type === "challenge"
       ? params.type
       : "all";
-  const activeStatus =
-    params.status === "open" || params.status === "solved"
+  const unansweredEnabled = isFeatureEnabled("unansweredFilter");
+  const activeStatus: HomeThreadStatusFilter =
+    params.status === "open" ||
+    params.status === "solved" ||
+    (unansweredEnabled && params.status === "unanswered")
       ? params.status
       : "all";
   const searchQuery = params.q?.trim() || "";

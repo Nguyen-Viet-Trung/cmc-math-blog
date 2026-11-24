@@ -2,9 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { ChangePasswordCard } from "@/app/profile/_components/ChangePasswordCard";
+import { NotificationPreferencesCard } from "@/app/profile/_components/NotificationPreferencesCard";
 import { UserBadgesCabinet } from "@/components/CampaignBadgePill";
 import { Button } from "@/components/ui/button";
 import { listUserEarnedBadges } from "@/lib/campaign-service";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import {
   getCurrentUserId,
   getCurrentUserProfile,
@@ -42,6 +44,9 @@ export default async function ProfilePage() {
       </div>
       <ProfileForm user={user} />
       <UserBadgesCabinet id="badges" badges={badges} showRewardStatus />
+      {isFeatureEnabled("notificationPrefs") && (
+        <NotificationPreferencesCard initialPrefs={user.notificationPrefs} />
+      )}
       <ChangePasswordCard />
     </div>
   );

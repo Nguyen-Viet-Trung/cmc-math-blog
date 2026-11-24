@@ -53,6 +53,7 @@ model profiles {
   total_earned_points                                        Int                  @default(0)
   solved_count                                               Int                  @default(0)
   is_banned                                                  Boolean              @default(false)
+  notification_prefs                                         Json                 @default("{\"replies\":true,\"mentions\":true,\"follows\":true,\"campaigns\":true,\"awards\":true,\"digest\":true}") @db.JsonB
   joined_at                                                  DateTime             @default(now()) @db.Timestamptz(6)
   created_at                                                 DateTime             @default(now()) @db.Timestamptz(6)
   updated_at                                                 DateTime             @default(now()) @db.Timestamptz(6)

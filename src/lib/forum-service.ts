@@ -10,6 +10,7 @@ import {
   isDatabaseConfigured,
   isSupabaseAuthConfigured,
 } from "./env";
+import { normalizeNotificationPrefs } from "./notification-prefs";
 import {
   buildPaginatedResult,
   normalizePagination,
@@ -30,6 +31,7 @@ import {
 import type {
   AdminReplyAuditItem,
   Category,
+  HomeThreadStatusFilter,
   PaginatedThreadsResult,
   PointTransactionItem,
   PublicLeaderboardEntry,
@@ -64,6 +66,7 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
     totalEarnedPoints: Number(row.total_earned_points ?? 0),
     solvedCount: Number(row.solved_count ?? 0),
     isBanned: Boolean(row.is_banned),
+    notificationPrefs: normalizeNotificationPrefs(row.notification_prefs),
     joinedAt,
     createdAt,
   };
@@ -265,7 +268,7 @@ export async function getCategories(): Promise<Category[]> {
 
 export interface ListThreadsFilter {
   categorySlug?: string;
-  status?: "open" | "solved" | "all";
+  status?: HomeThreadStatusFilter;
   threadType?: ThreadType | "all";
   query?: string;
 }
@@ -284,50 +287,98 @@ async function queryThreadsPaginatedFromDb(
   const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize)));
   const offset = (safePage - 1) * safeSize;
   const sql = getSql();
+  const isUnansweredOnly = statusFilter === "unanswered";
 
-  const fetchRows = (off: number) => sql`
-    SELECT
-      t.id,
-      t.title,
-      LEFT(t.content, 200) AS content_preview,
-      COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
-      t.grade_tag,
-      t.thread_type,
-      t.challenge_ends_at,
-      t.bounty_points,
-      t.author_reward_points,
-      t.status,
-      t.accepted_reply_id,
-      t.is_pinned,
-      t.view_count,
-      t.reply_count,
-      t.created_at,
-      p.id AS author_id,
-      p.display_name AS author_name,
-      p.nickname AS author_nickname,
-      p.avatar_url AS author_avatar,
-      p.grade_level AS author_grade,
-      p.role AS author_role,
-      c.id AS category_id,
-      c.slug AS category_slug,
-      c.name AS category_name,
-      c.color AS category_color,
-      COUNT(*) OVER()::int AS total_count
-    FROM public.threads t
-    JOIN public.profiles p ON p.id = t.author_id
-    JOIN public.categories c ON c.id = t.category_id
-    WHERE (${catSlug}::text IS NULL OR c.slug = ${catSlug})
-      AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
-      AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
-      AND (
-        ${searchPattern}::text IS NULL
-        OR t.title ILIKE ${searchPattern}
-        OR t.content ILIKE ${searchPattern}
-      )
-    ORDER BY t.is_pinned DESC, t.created_at DESC
-    LIMIT ${safeSize}
-    OFFSET ${off}
-  `;
+  const fetchRows = (off: number) =>
+    isUnansweredOnly
+      ? sql`
+          SELECT
+            t.id,
+            t.title,
+            LEFT(t.content, 200) AS content_preview,
+            COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
+            t.grade_tag,
+            t.thread_type,
+            t.challenge_ends_at,
+            t.bounty_points,
+            t.author_reward_points,
+            t.status,
+            t.accepted_reply_id,
+            t.is_pinned,
+            t.view_count,
+            t.reply_count,
+            t.created_at,
+            p.id AS author_id,
+            p.display_name AS author_name,
+            p.nickname AS author_nickname,
+            p.avatar_url AS author_avatar,
+            p.grade_level AS author_grade,
+            p.role AS author_role,
+            c.id AS category_id,
+            c.slug AS category_slug,
+            c.name AS category_name,
+            c.color AS category_color,
+            COUNT(*) OVER()::int AS total_count
+          FROM public.threads t
+          JOIN public.profiles p ON p.id = t.author_id
+          JOIN public.categories c ON c.id = t.category_id
+          WHERE t.thread_type = 'question'
+            AND t.status = 'open'
+            AND t.reply_count = 0
+            AND (${catSlug}::text IS NULL OR c.slug = ${catSlug})
+            AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
+            AND (
+              ${searchPattern}::text IS NULL
+              OR t.title ILIKE ${searchPattern}
+              OR t.content ILIKE ${searchPattern}
+            )
+          ORDER BY t.is_pinned DESC, t.created_at DESC
+          LIMIT ${safeSize}
+          OFFSET ${off}
+        `
+      : sql`
+          SELECT
+            t.id,
+            t.title,
+            LEFT(t.content, 200) AS content_preview,
+            COALESCE(array_length(t.image_urls, 1), 0) AS image_count,
+            t.grade_tag,
+            t.thread_type,
+            t.challenge_ends_at,
+            t.bounty_points,
+            t.author_reward_points,
+            t.status,
+            t.accepted_reply_id,
+            t.is_pinned,
+            t.view_count,
+            t.reply_count,
+            t.created_at,
+            p.id AS author_id,
+            p.display_name AS author_name,
+            p.nickname AS author_nickname,
+            p.avatar_url AS author_avatar,
+            p.grade_level AS author_grade,
+            p.role AS author_role,
+            c.id AS category_id,
+            c.slug AS category_slug,
+            c.name AS category_name,
+            c.color AS category_color,
+            COUNT(*) OVER()::int AS total_count
+          FROM public.threads t
+          JOIN public.profiles p ON p.id = t.author_id
+          JOIN public.categories c ON c.id = t.category_id
+          WHERE (${catSlug}::text IS NULL OR c.slug = ${catSlug})
+            AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
+            AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
+            AND (
+              ${searchPattern}::text IS NULL
+              OR t.title ILIKE ${searchPattern}
+              OR t.content ILIKE ${searchPattern}
+            )
+          ORDER BY t.is_pinned DESC, t.created_at DESC
+          LIMIT ${safeSize}
+          OFFSET ${off}
+        `;
 
   let effectivePage = safePage;
   let rows = await fetchRows(offset);
@@ -335,19 +386,35 @@ async function queryThreadsPaginatedFromDb(
     rows.length > 0 ? Number(rows[0].total_count ?? rows.length) : 0;
 
   if (rows.length === 0 && safePage > 1) {
-    const countRows = await sql`
-      SELECT COUNT(*)::int AS total_count
-      FROM public.threads t
-      JOIN public.categories c ON c.id = t.category_id
-      WHERE (${catSlug}::text IS NULL OR c.slug = ${catSlug})
-        AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
-        AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
-        AND (
-          ${searchPattern}::text IS NULL
-          OR t.title ILIKE ${searchPattern}
-          OR t.content ILIKE ${searchPattern}
-        )
-    `;
+    const countRows = isUnansweredOnly
+      ? await sql`
+          SELECT COUNT(*)::int AS total_count
+          FROM public.threads t
+          JOIN public.categories c ON c.id = t.category_id
+          WHERE t.thread_type = 'question'
+            AND t.status = 'open'
+            AND t.reply_count = 0
+            AND (${catSlug}::text IS NULL OR c.slug = ${catSlug})
+            AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
+            AND (
+              ${searchPattern}::text IS NULL
+              OR t.title ILIKE ${searchPattern}
+              OR t.content ILIKE ${searchPattern}
+            )
+        `
+      : await sql`
+          SELECT COUNT(*)::int AS total_count
+          FROM public.threads t
+          JOIN public.categories c ON c.id = t.category_id
+          WHERE (${catSlug}::text IS NULL OR c.slug = ${catSlug})
+            AND (${statusFilter}::text IS NULL OR t.status = ${statusFilter})
+            AND (${typeFilter}::text IS NULL OR t.thread_type = ${typeFilter})
+            AND (
+              ${searchPattern}::text IS NULL
+              OR t.title ILIKE ${searchPattern}
+              OR t.content ILIKE ${searchPattern}
+            )
+        `;
     totalCount = Number(countRows[0]?.total_count ?? 0);
     if (totalCount > 0) {
       effectivePage = Math.max(1, Math.ceil(totalCount / safeSize));

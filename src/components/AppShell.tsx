@@ -21,6 +21,7 @@ import { ThemeToggle } from "@/components/ThemeToggle";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { useAppSession } from "@/hooks/useAppSession";
+import { clearAllDraftsInStorage } from "@/lib/math-draft";
 import { getRoutePageTitle, SIDEBAR_STORAGE_KEY } from "@/lib/navigation";
 
 const AppMobileDrawer = dynamic(
@@ -140,8 +141,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleSignOutCompleted = useCallback(() => {
-    // Xóa toàn bộ cache TanStack Query riêng tư (thông báo, admin, bài ẩn) khi đăng xuất trên máy dùng chung
+    // Xóa toàn bộ cache TanStack Query & bản nháp cục bộ (thông báo, admin, bài ẩn, nháp bài viết) khi đăng xuất trên máy dùng chung
     queryClient.clear();
+    try {
+      clearAllDraftsInStorage(window.localStorage);
+    } catch {
+      // ignore storage errors
+    }
     setSignedOutToast(true);
     router.push("/");
     router.refresh();

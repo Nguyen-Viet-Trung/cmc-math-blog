@@ -3,13 +3,13 @@ import { Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildHomeFilterUrl } from "@/lib/format";
-import type { Category, ThreadType } from "@/lib/types";
+import type { Category, HomeThreadStatusFilter, ThreadType } from "@/lib/types";
 import { HomeFilterDropdowns } from "./HomeFilterDropdowns";
 
 interface HomeFeedFiltersProps {
   activeType: ThreadType | "all";
   activeCat: string;
-  activeStatus: "all" | "open" | "solved";
+  activeStatus: HomeThreadStatusFilter;
   searchQuery: string;
   pageSize?: number;
   threadCount: number;

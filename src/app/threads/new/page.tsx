@@ -48,6 +48,7 @@ export default async function NewThreadPage() {
           categories={categories}
           defaultPoints={settings.defaultSolvedPoints}
           isAdmin={user?.role === "admin"}
+          userId={user?.id ?? null}
         />
       )}
     </div>

@@ -22,13 +22,18 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { UrlPaginationBar } from "@/components/UrlPaginationBar";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import {
   formatRelativeDate,
   formatRemainingTime,
   getThreadTypeLabel,
 } from "@/lib/format";
 import { isChallengeBlindActive } from "@/lib/rules";
-import type { ThreadSummary, ThreadType } from "@/lib/types";
+import type {
+  HomeThreadStatusFilter,
+  ThreadSummary,
+  ThreadType,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 interface HomeThreadListProps {
@@ -41,7 +46,7 @@ interface HomeThreadListProps {
     totalCount: number;
     activeType: ThreadType | "all";
     activeCat: string;
-    activeStatus: "all" | "open" | "solved";
+    activeStatus: HomeThreadStatusFilter;
     searchQuery: string;
   };
 }
@@ -95,11 +100,18 @@ export function HomeThreadList({
     );
   }
 
+  const unansweredEnabled = isFeatureEnabled("unansweredFilter");
+
   return (
     <div className="flex flex-col gap-3">
       <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
         {threads.map((t) => {
           const typeLabel = getThreadTypeLabel(t.threadType);
+          const isUnansweredQuestion =
+            unansweredEnabled &&
+            t.threadType === "question" &&
+            t.status === "open" &&
+            t.replyCount === 0;
           const blindActive = isChallengeBlindActive(
             t.threadType,
             t.status,
@@ -116,7 +128,9 @@ export function HomeThreadList({
                   ? "Đã có lời giải đúng"
                   : t.status === "closed"
                     ? "Chủ đề đã đóng"
-                    : "Đang chờ lời giải";
+                    : isUnansweredQuestion
+                      ? "Chưa có lời giải"
+                      : "Đang chờ lời giải";
 
           return (
             <Link
@@ -164,6 +178,10 @@ export function HomeThreadList({
                     ) : t.threadType !== "question" ? (
                       <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary">
                         {typeLabel}
+                      </span>
+                    ) : isUnansweredQuestion ? (
+                      <span className="rounded border border-bounty-border bg-bounty-surface px-1.5 py-0.5 text-[10px] font-medium text-bounty-foreground">
+                        Chưa có lời giải
                       </span>
                     ) : null}
                     <h3 className="text-[15px] font-semibold leading-snug text-foreground transition-colors group-hover:text-primary">

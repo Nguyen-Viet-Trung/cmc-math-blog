@@ -1,4 +1,4 @@
-import type { ThreadType } from "./types";
+import type { HomeThreadStatusFilter, ThreadType } from "./types";
 
 export function formatRelativeDate(
   iso: string,
@@ -97,7 +97,7 @@ export function formatRemainingTime(
 
 export function buildHomeFilterUrl(params: {
   cat?: string;
-  status?: string;
+  status?: HomeThreadStatusFilter | string;
   type?: string;
   q?: string;
   page?: number;

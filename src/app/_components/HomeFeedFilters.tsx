@@ -5,14 +5,7 @@ import { Input } from "@/components/ui/input";
 import { buildHomeFilterUrl } from "@/lib/format";
 import type { Category, ThreadType } from "@/lib/types";
 import { cn } from "@/lib/utils";
-
-const TYPE_TABS: { key: ThreadType | "all"; label: string }[] = [
-  { key: "all", label: "Tất cả" },
-  { key: "question", label: "Hỏi bài" },
-  { key: "challenge", label: "Thử thách" },
-  { key: "news", label: "News" },
-  { key: "research", label: "Research" },
-];
+import { HomeFilterDropdowns } from "./HomeFilterDropdowns";
 
 const STATUS_OPTIONS = [
   { key: "all", label: "Mọi trạng thái" },
@@ -81,116 +74,52 @@ export function HomeFeedFilters({
         </Button>
       </form>
 
-      {/* Hàng 1: Tab phân loại bài viết + Bộ lọc trạng thái */}
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border">
-        <div className="-mb-px flex items-center gap-5 text-sm">
-          {TYPE_TABS.map((tab) => {
-            const isActive = activeType === tab.key;
-            return (
-              <Link
-                key={tab.key}
-                href={buildHomeFilterUrl({
-                  type: tab.key,
-                  cat: activeCat,
-                  status:
-                    tab.key === "news" || tab.key === "research"
-                      ? "all"
-                      : activeStatus,
-                  q: searchQuery,
-                  pageSize,
-                })}
-                className={cn(
-                  "border-b-2 pb-2.5 text-[13.5px] transition-colors",
-                  isActive
-                    ? "border-primary font-semibold text-foreground"
-                    : "border-transparent font-normal text-muted-foreground hover:text-foreground"
-                )}
-              >
-                {tab.label}
-              </Link>
-            );
-          })}
-        </div>
+        {/* Một thanh lọc gọn gàng: Dropdown Loại bài + Dropdown Chuyên mục | Trạng thái + Tổng số bài */}
+        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border pb-3">
+          <HomeFilterDropdowns
+            activeType={activeType}
+            activeCat={activeCat}
+            activeStatus={activeStatus}
+            searchQuery={searchQuery}
+            pageSize={pageSize}
+            categories={categories}
+          />
 
-        <div className="flex items-center gap-3 pb-2 text-xs">
-          {(activeType === "all" || activeType === "question") && (
-            <div className="flex items-center gap-1 rounded-md bg-muted/60 p-0.5">
-              {STATUS_OPTIONS.map((st) => {
-                const active = activeStatus === st.key;
-                return (
-                  <Link
-                    key={st.key}
-                    href={buildHomeFilterUrl({
-                      type: activeType,
-                      cat: activeCat,
-                      status: st.key,
-                      q: searchQuery,
-                      pageSize,
-                    })}
-                    className={cn(
-                      "rounded px-2 py-0.5 transition-colors",
-                      active
-                        ? "bg-card font-semibold text-foreground"
-                        : "text-muted-foreground hover:text-foreground"
-                    )}
-                  >
-                    {st.label}
-                  </Link>
-                );
-              })}
+            <div className="flex items-center gap-2.5 text-xs">
+              {(activeType === "all" || activeType === "question") && (
+                <div className="flex items-center gap-1 rounded-md bg-muted/60 p-0.5">
+                  {STATUS_OPTIONS.map((st) => {
+                    const active = activeStatus === st.key;
+                    return (
+                      <Link
+                        key={st.key}
+                        href={buildHomeFilterUrl({
+                          type: activeType,
+                          cat: activeCat,
+                          status: st.key,
+                          q: searchQuery,
+                          pageSize,
+                        })}
+                        prefetch={false}
+                        className={cn(
+                          "rounded px-2 py-0.5 transition-colors",
+                          active
+                            ? "bg-card font-semibold text-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {st.label}
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+
+                <span className="shrink-0 tabular-nums text-muted-foreground">
+                  {threadCount} bài
+                </span>
             </div>
-          )}
-
-          <span className="tabular-nums text-muted-foreground">
-            {threadCount} bài
-          </span>
-        </div>
-      </div>
-
-      {/* Hàng 2: Bộ lọc chuyên mục Toán phẳng */}
-      {categories.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Link
-            href={buildHomeFilterUrl({
-              type: activeType,
-              status: activeStatus,
-              q: searchQuery,
-              pageSize,
-            })}
-            className={cn(
-              "rounded-md px-2.5 py-1 text-xs transition-colors",
-              !activeCat
-                ? "bg-primary/12 font-semibold text-primary"
-                : "text-muted-foreground hover:bg-muted hover:text-foreground"
-            )}
-          >
-            Tất cả chuyên mục
-          </Link>
-          {categories.map((c) => {
-            const selected = activeCat === c.slug;
-            return (
-              <Link
-                key={c.id}
-                href={buildHomeFilterUrl({
-                  type: activeType,
-                  cat: c.slug,
-                  status: activeStatus,
-                  q: searchQuery,
-                  pageSize,
-                })}
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-xs transition-colors",
-                  selected
-                    ? "bg-primary/12 font-semibold text-primary"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                )}
-              >
-                {c.name}
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </>
-  );
+          </div>
+        </>
+        );
 }

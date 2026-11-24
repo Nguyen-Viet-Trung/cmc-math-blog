@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS public.point_transactions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   amount INTEGER NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund', 'challenge_reward')),
+  type TEXT NOT NULL CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund', 'challenge_reward', 'campaign_award')),
   reason TEXT NOT NULL,
   reference_id UUID,
   created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
@@ -147,7 +147,7 @@ CREATE TABLE IF NOT EXISTS public.feedbacks (
 CREATE TABLE IF NOT EXISTS public.notifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
-  type TEXT NOT NULL CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system', 'reply_mention', 'challenge_award')),
+  type TEXT NOT NULL CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system', 'reply_mention', 'challenge_award', 'campaign_award')),
   title TEXT NOT NULL,
   body TEXT NOT NULL DEFAULT '',
   href TEXT NOT NULL DEFAULT '/',
@@ -195,6 +195,64 @@ CREATE TABLE IF NOT EXISTS public.site_documents (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- 16. Giải đấu / Chiến dịch Toán học (Campaigns)
+CREATE TABLE IF NOT EXISTS public.campaigns (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug TEXT UNIQUE NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  cover_color TEXT NOT NULL DEFAULT 'blue',
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  is_published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (ends_at > starts_at)
+);
+
+-- 17. Bài thử thách thuộc Giải đấu (Campaign Threads)
+CREATE TABLE IF NOT EXISTS public.campaign_threads (
+  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  thread_id UUID NOT NULL REFERENCES public.threads(id) ON DELETE CASCADE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (campaign_id, thread_id)
+);
+
+-- 18. Mốc Award & Badge trong Giải đấu (Campaign Awards)
+CREATE TABLE IF NOT EXISTS public.campaign_awards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  required_completed_count INTEGER NOT NULL DEFAULT 1 CHECK (required_completed_count >= 1),
+  bonus_points INTEGER NOT NULL DEFAULT 0 CHECK (bonus_points >= 0),
+  reward_id UUID REFERENCES public.rewards(id) ON DELETE SET NULL,
+  badge_name TEXT NOT NULL,
+  badge_icon TEXT NOT NULL DEFAULT 'trophy',
+  badge_color TEXT NOT NULL DEFAULT 'amber',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 19. Sổ cái Award & Badge học sinh đã đạt được (User Campaign Awards)
+CREATE TABLE IF NOT EXISTS public.user_campaign_awards (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  campaign_id UUID NOT NULL REFERENCES public.campaigns(id) ON DELETE CASCADE,
+  award_id UUID NOT NULL REFERENCES public.campaign_awards(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  completed_count INTEGER NOT NULL DEFAULT 1 CHECK (completed_count >= 0),
+  points_awarded INTEGER NOT NULL DEFAULT 0 CHECK (points_awarded >= 0),
+  reward_id UUID REFERENCES public.rewards(id) ON DELETE SET NULL,
+  reward_status TEXT NOT NULL DEFAULT 'none' CHECK (reward_status IN ('none', 'pending', 'fulfilled')),
+  awarded_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  awarded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (award_id, user_id)
+);
+
 -- Nâng cấp idempotent cho các DB đã khởi tạo trước đó
 ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS challenge_ends_at TIMESTAMPTZ;
 ALTER TABLE public.threads DROP CONSTRAINT IF EXISTS threads_thread_type_check;
@@ -203,10 +261,10 @@ ALTER TABLE public.threads ADD CONSTRAINT threads_thread_type_check CHECK (threa
 ALTER TABLE public.replies ADD COLUMN IF NOT EXISTS parent_reply_id UUID REFERENCES public.replies(id) ON DELETE CASCADE;
 
 ALTER TABLE public.point_transactions DROP CONSTRAINT IF EXISTS point_transactions_type_check;
-ALTER TABLE public.point_transactions ADD CONSTRAINT point_transactions_type_check CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund', 'challenge_reward'));
+ALTER TABLE public.point_transactions ADD CONSTRAINT point_transactions_type_check CHECK (type IN ('accepted_answer', 'admin_grant', 'admin_deduct', 'reward_redeem', 'reward_refund', 'challenge_reward', 'campaign_award'));
 
 ALTER TABLE public.notifications DROP CONSTRAINT IF EXISTS notifications_type_check;
-ALTER TABLE public.notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system', 'reply_mention', 'challenge_award'));
+ALTER TABLE public.notifications ADD CONSTRAINT notifications_type_check CHECK (type IN ('new_reply', 'answer_accepted', 'author_reward', 'redemption_update', 'system', 'reply_mention', 'challenge_award', 'campaign_award'));
 
 -- Indexes tối ưu tốc độ truy vấn
 CREATE INDEX IF NOT EXISTS idx_threads_category_created ON public.threads(category_id, created_at DESC);
@@ -250,6 +308,16 @@ CREATE INDEX IF NOT EXISTS idx_profiles_lower_display_name ON public.profiles(LO
 CREATE INDEX IF NOT EXISTS idx_profiles_lower_nickname ON public.profiles(LOWER(nickname)) WHERE is_banned = FALSE AND nickname <> '';
 CREATE INDEX IF NOT EXISTS idx_profiles_leaderboard_active ON public.profiles(total_earned_points DESC, solved_count DESC, created_at ASC) WHERE is_banned = FALSE AND (total_earned_points > 0 OR solved_count > 0);
 CREATE INDEX IF NOT EXISTS idx_rewards_active_cost ON public.rewards(points_cost ASC, created_at ASC) WHERE is_active = TRUE;
+CREATE INDEX IF NOT EXISTS idx_campaigns_published_dates ON public.campaigns(is_published, starts_at DESC, ends_at DESC);
+CREATE INDEX IF NOT EXISTS idx_campaigns_created_by ON public.campaigns(created_by);
+CREATE INDEX IF NOT EXISTS idx_campaign_threads_order ON public.campaign_threads(campaign_id, sort_order ASC, added_at ASC);
+CREATE INDEX IF NOT EXISTS idx_campaign_threads_thread_id ON public.campaign_threads(thread_id);
+CREATE INDEX IF NOT EXISTS idx_campaign_awards_campaign_order ON public.campaign_awards(campaign_id, required_completed_count ASC, sort_order ASC);
+CREATE INDEX IF NOT EXISTS idx_campaign_awards_reward_id ON public.campaign_awards(reward_id);
+CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_user ON public.user_campaign_awards(user_id, awarded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_campaign ON public.user_campaign_awards(campaign_id, awarded_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_reward ON public.user_campaign_awards(reward_id);
+CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_awarded_by ON public.user_campaign_awards(awarded_by);
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.
@@ -269,6 +337,10 @@ ALTER TABLE public.thread_bookmarks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_threads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.site_documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaign_threads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.campaign_awards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_campaign_awards ENABLE ROW LEVEL SECURITY;
 
 -- Khởi tạo cấu hình mặc định
 INSERT INTO public.site_settings (id, site_name, default_solved_points)
@@ -282,5 +354,6 @@ VALUES
   ('giai-tich', 'Giải tích & Hàm số', 'Giới hạn, đạo hàm, khảo sát hàm số, tích phân & phương trình vi phân', 'indigo', 2),
   ('hinh-hoc', 'Hình học phẳng & Không gian', 'Hình học cổ điển, tọa độ Oxy/Oxyz, lượng giác & phép biến hình', 'emerald', 3),
   ('so-hoc-to-hop', 'Số học & Tổ hợp - Xác suất', 'Chia hết, đồng dư, phương trình nghiệm nguyên, đếm, xác suất & đồ thị', 'amber', 4),
-  ('de-thi-on-luyen', 'Đề thi & Ôn luyện', 'Thảo luận đề thi vào lớp 10 Chuyên, Học sinh giỏi, Đánh giá năng lực & Tốt nghiệp THPT', 'rose', 5)
+  ('de-thi-on-luyen', 'Đề thi & Ôn luyện', 'Thảo luận đề thi vào lớp 10 Chuyên, Học sinh giỏi, Đánh giá năng lực & Tốt nghiệp THPT', 'rose', 5),
+  ('khac', 'Khác', 'Chủ đề Toán học khác, thảo luận chung, phương pháp học tập và chia sẻ ngoài các chuyên mục trên', 'slate', 6)
 ON CONFLICT (slug) DO NOTHING;

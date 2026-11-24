@@ -17,13 +17,18 @@
   - **Thử thách Tuần (`challenge`):** Hỗ trợ chế độ nộp bài ẩn (**Blind Submission**) kèm đồng hồ đếm ngược tới hạn chót; Admin chấm bài và trao thưởng cho một hoặc nhiều người thắng cuộc.
   - **Research (`research`)** & **News (`news`):** Chia sẻ chuyên đề nghiên cứu, tin tức Toán học và nhận thưởng điểm khuyến khích từ Ban Quản Trị.
 - **Thảo luận sâu & Cập nhật tức thì:** Bình luận phân cấp (**Nested Replies**), nhắc tên thành viên (**`@mention`**), cảm ơn/bầu chọn lời giải hay (**Upvote**), và đồng bộ bình luận/trạng thái bài viết theo thời gian thực qua **Supabase Realtime Broadcast**.
-- **Tìm kiếm & Lọc nhanh:** Tìm kiếm theo từ khóa (`pg_trgm`), lọc theo chuyên mục Toán, loại bài viết, trạng thái (`Chưa giải` / `Đã giải`) và phân trang linh hoạt.
+- **Tìm kiếm & Bộ lọc Dropdown gọn gàng:** Tìm kiếm theo từ khóa (`pg_trgm`), lọc nhanh trên 1 hàng bằng menu Dropdown theo **Loại bài**, **Chuyên mục Toán** (bao gồm chuyên mục **Khác**), **Trạng thái** (`Chưa giải` / `Đã giải`) và phân trang linh hoạt.
 
-### 3. Bộ sưu tập Chuyên đề (`/collections`) & Sổ tay cá nhân (`/bookmarks`)
+### 3. Giải đấu (Campaign), Giải thưởng (Award) & Bộ sưu tập Huy hiệu (Badge)
+- **Trang Giải đấu (`/campaigns` & `/campaigns/[slug]`):** Hiển thị các giải đấu theo thời gian thực (*Đang diễn ra / Sắp mở / Đã kết thúc* chuẩn giờ Việt Nam `UTC+7`), danh sách bài thử thách, thanh tiến độ hoàn thành cá nhân, mốc mở khóa Award và bảng vinh danh thành viên đạt giải.
+- **Tự động trao Award & Badge nguyên tử:** Khi Admin phê duyệt lời giải trong các thử thách thuộc giải đấu đang diễn ra, hệ thống tự động cộng tiến độ, mở khóa **Award**, gắn **Huy hiệu (Badge)**, cộng điểm thưởng vào cả 2 cột điểm, ghi nhận **quà Shop đi kèm** (trạng thái *Chờ trao / Đã trao*), chặn cấp trùng bằng `UNIQUE` và gửi thông báo tức thì.
+- **Bộ sưu tập Huy hiệu (`/badges`):** Tổng hợp toàn bộ Huy hiệu & Giải thưởng đã công bố trong hệ thống, đánh dấu trạng thái *Đã sở hữu* cho người đang đăng nhập và hiển thị **Bảng vinh danh Top Sưu tầm Huy hiệu** dẫn trực tiếp tới hồ sơ công khai của từng thành viên.
+
+### 4. Bộ sưu tập Chuyên đề (`/collections`) & Sổ tay cá nhân (`/bookmarks`)
 - **Bộ sưu tập Chuyên đề (`/collections`):** Lộ trình ôn tập và tuyển tập các bài toán tiêu biểu được Admin biên tập theo chủ đề, hiển thị số lượng bài viết và tiến độ bài đã giải.
 - **Sổ tay bài toán (`/bookmarks`):** Học sinh lưu nhanh các bài toán hay để xem lại và ôn luyện sau này.
 
-### 4. Hệ thống Điểm số tách bạch, Bảng Vàng & Đổi quà
+### 5. Hệ thống Điểm số tách bạch, Bảng Vàng & Đổi quà
 - **Phân tách rõ 2 loại điểm:**
   - **Điểm khả dụng (`points_balance`):** Dùng để đổi quà tại cửa hàng; tự động hoàn lại khi đơn đổi quà bị từ chối.
   - **Tổng điểm đạt được (`total_earned_points`):** Dùng để xếp hạng trên **Bảng Vàng**, giữ nguyên không bị tụt hạng khi học sinh đổi quà.
@@ -31,14 +36,15 @@
 - **Bảng Vàng Cao Thủ (`/leaderboard`):** Vinh danh học sinh theo tổng điểm cống hiến và số lời giải đúng.
 - **Cửa hàng Đổi quà (`/rewards`):** Hiển thị mốc điểm, tồn kho, lịch sử đơn đổi quà và trạng thái duyệt (*Chờ duyệt / Đã duyệt / Đã trao / Từ chối*).
 
-### 5. Hồ sơ Thành viên, Thông báo, Nội quy & Góp ý
-- **Hồ sơ cá nhân (`/profile`) & Trang thành viên công khai (`/members/[id]`):** Cập nhật ảnh đại diện, biệt danh, cấp học, giới thiệu, đổi mật khẩu và theo dõi tổng quan điểm; trang công khai hiển thị thành tích và các bài viết gần đây (giữ riêng tư số dư đổi quà).
-- **Thông báo trong ứng dụng (`NotificationBell`):** Báo tức thì khi có bình luận mới, được `@mention`, được chọn lời giải đúng, nhận thưởng bài viết/Thử thách Tuần hoặc cập nhật đơn đổi quà.
+### 6. Hồ sơ Thành viên, Thông báo, Nội quy & Góp ý
+- **Hồ sơ cá nhân (`/profile`) & Trang thành viên công khai (`/members/[id]`):** Cập nhật ảnh đại diện, biệt danh, cấp học, giới thiệu, đổi mật khẩu và xem trước hồ sơ công khai. Trang công khai hiển thị **Huy hiệu tiêu biểu**, thống kê 4 cột, **tủ Huy hiệu & Giải thưởng (Badge & Award)** chi tiết để thành viên khác theo dõi cùng các bài viết gần đây (giữ riêng tư số dư đổi quà).
+- **Thông báo trong ứng dụng (`NotificationBell`):** Báo tức thì khi có bình luận mới, được `@mention`, được chọn lời giải đúng, nhận thưởng bài viết/Thử thách Tuần, mở khóa Award/Badge từ Giải đấu hoặc cập nhật đơn đổi quà.
 - **Nội quy Diễn đàn (`/rules`):** Trang Rich Text được cache tĩnh/ISR, tự động tạo **Mục lục nhanh** từ các tiêu đề mục và hỗ trợ Admin biên tập trực tiếp.
 - **Góp ý & Báo lỗi (`/feedback`):** Học sinh gửi báo lỗi, góp ý UX hoặc đề xuất tính năng kèm ảnh chụp và theo dõi phản hồi công khai từ Ban Quản Trị.
 
-### 6. Admin Portal Toàn diện (`/admin`)
-- Giao diện quản trị phân nhóm theo Sub-Sidebar + Drawer/Action Menu gọn gàng:
+### 7. Admin Portal Toàn diện (`/admin`)
+- Giao diện quản trị phân nhóm theo Sub-Sidebar + Drawer/Action Menu gọn gàng (code-splitting theo tab & modal):
+  - **Giải đấu & Huy hiệu:** Thiết kế trọn gói Campaign (thời gian từ ngày X tới ngày Y, màu bìa, bản nháp/công bố, xem trước bản nháp cho Admin), gắn bài thử thách hợp lệ, thiết kế nhiều mốc **Award + Điểm thưởng + Quà Shop + Huy hiệu (Icon & Màu sắc)**, theo dõi lịch sử nhận giải và xác nhận/hoàn tác trao quà Shop.
   - **Học sinh:** Tìm kiếm, điều chỉnh điểm theo **3 phạm vi** (*Cả hai / Chỉ điểm khả dụng / Chỉ tổng điểm đạt được*), chỉnh ngày gia nhập CLB, đặt lại mật khẩu, khóa/mở khóa tài khoản.
   - **Bài viết & Thưởng:** Ghim/đóng/xóa bài, đổi loại bài & hạn Thử thách Tuần, tùy chỉnh điểm thưởng lời giải và thưởng điểm cho tác giả bài viết hay.
   - **Chuyên đề:** Tạo/sửa/xuất bản chuyên đề và sắp xếp thứ tự các bài toán bên trong.
@@ -48,8 +54,12 @@
   - **Nội quy diễn đàn:** Trình biên tập **Rich Text Editor** (thanh công cụ định dạng, phím tắt `Ctrl+B/I/K`, chế độ **Soạn thảo / Chia đôi xem trước / Xem trước**, nút nạp lại mẫu gốc).
   - **Cài đặt chung:** Tùy chỉnh tên diễn đàn, điểm thưởng mặc định và thông báo ghim đầu trang chủ.
 
-### 7. Trải nghiệm người dùng (UX), Hiệu năng & Bảo mật
-- **Light / Dark Mode đồng bộ**, Sidebar thu gọn được + Mobile Drawer responsive, và **Hộp thoại xác nhận đăng xuất (`SignOutDialog`)** có hiệu ứng chuyển trạng thái mượt mà.
+### 8. Trải nghiệm người dùng (UX), Điều hướng 3 tầng, Hiệu năng & Bảo mật
+- **Điều hướng Sidebar phân tầng ưu tiên kèm header chia khối** (đồng bộ Desktop Sidebar thu gọn được & Mobile Drawer):
+  - **Thảo luận Toán *(Primary)*:** Diễn đàn (`/`).
+  - **Học tập & Giải đấu *(Secondary)*:** Chuyên đề, Giải đấu, Bảng vàng, Sổ tay.
+  - **Phần thưởng & Cộng đồng *(Supporting)*:** Cửa hàng quà, Bộ sưu tập Huy hiệu, Nội quy, Góp ý & Báo lỗi.
+- **Light / Dark Mode đồng bộ** và **Hộp thoại xác nhận đăng xuất (`SignOutDialog`)** có hiệu ứng chuyển trạng thái mượt mà kèm dọn cache phiên làm việc.
 - **Bảo mật & Hiệu năng:** Bật **Row Level Security (RLS)** trên toàn bộ bảng `public`, xác thực JWT cục bộ tốc độ cao, phân tầng cache (`unstable_cache` + `revalidateTag`), tối ưu connection pooling và tự động giữ Supabase Free hoạt động 24/7 qua **Vercel Cron** (`/api/cron/keep-alive` trong `vercel.json`).
 
 ---
@@ -73,7 +83,7 @@
 ```bash
 npm run typecheck   # Kiểm tra kiểu TypeScript
 npm test            # Chạy bộ unit test (Vitest)
-npm run build       # Build production Next.js
+npm run build       # Kiểm tra lint/types & Build production Next.js
 ```
 
 ---

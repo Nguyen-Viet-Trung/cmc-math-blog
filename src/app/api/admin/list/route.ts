@@ -6,6 +6,7 @@ import {
   listAdminStudentsPaginated,
   listAdminThreadsPaginated,
 } from "@/lib/admin-list-service";
+import { listCampaignsForAdmin } from "@/lib/campaign-service";
 import { listCollectionsForAdmin } from "@/lib/collection-service";
 import { getForumRules } from "@/lib/document-service";
 import {
@@ -78,6 +79,8 @@ export async function GET(request: Request) {
         { collections: await listCollectionsForAdmin() },
         { headers }
       );
+    case "campaigns":
+      return NextResponse.json(await listCampaignsForAdmin(), { headers });
     case "rules":
       return NextResponse.json(
         { rules: await getForumRules() },

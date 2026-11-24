@@ -429,15 +429,37 @@ export async function acceptReplyAction(
           body: res.threadTitle.slice(0, 120),
           href: `/threads/${threadId}`,
         }),
+        ...res.unlockedAwards.map((aw) =>
+          createNotification({
+            userId: res.solverId,
+            type: "campaign_award",
+            title: `Mở khóa Huy hiệu "${aw.badgeName}"${aw.bonusPoints > 0 ? ` (+${aw.bonusPoints}đ)` : ""}!`,
+            body: `${aw.awardTitle} — ${aw.campaignTitle}${aw.rewardName ? ` · Quà tặng: ${aw.rewardName}` : ""}`,
+            href: `/campaigns/${aw.campaignSlug}`,
+          })
+        ),
       ]);
     });
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
+    if (res.unlockedAwards.length > 0) {
+      revalidateTag(CACHE_TAGS.campaigns);
+      revalidatePath("/campaigns");
+      revalidatePath("/badges");
+      revalidatePath("/campaigns/[slug]", "page");
+      revalidatePath("/profile");
+      revalidatePath(`/members/${res.solverId}`);
+    }
+    revalidatePath(`/threads/${threadId}`);
     revalidatePath("/");
     revalidatePath("/leaderboard");
+    const badgeSuffix =
+      res.unlockedAwards.length > 0
+        ? ` Đồng thời mở khóa Huy hiệu: ${res.unlockedAwards.map((a) => `"${a.badgeName}"`).join(", ")}!`
+        : "";
     return {
       ok: true,
-      message: `Đã chọn lời giải đúng! Hệ thống đã tự động cộng +${res.awardedPoints} điểm cho ${res.solverName}.`,
+      message: `Đã chọn lời giải đúng! Hệ thống đã tự động cộng +${res.awardedPoints} điểm cho ${res.solverName}.${badgeSuffix}`,
     };
   } catch (err) {
     return {

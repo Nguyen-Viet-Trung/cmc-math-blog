@@ -7,7 +7,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
-import { MAIN_NAV_ITEMS, isNavRouteActive } from "@/lib/navigation";
+import { NAV_GROUPS, isNavRouteActive } from "@/lib/navigation";
 import type { UserProfile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -45,39 +45,73 @@ export function AppMobileDrawer({
 
         <Separator className="my-3.5" />
 
-        <nav className="flex flex-col gap-0.5">
-          {MAIN_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = isNavRouteActive(effectivePath, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
-                aria-current={active ? "page" : undefined}
-                onClick={() => onOpenChange(false)}
+        <nav
+          aria-label="Danh mục chức năng"
+          className="flex flex-1 flex-col overflow-y-auto pr-0.5"
+        >
+          {NAV_GROUPS.map((group, groupIdx) => (
+            <div
+              key={group.id}
+              className={cn(
+                groupIdx > 0 && "mt-3 border-t border-border/60 pt-3"
+              )}
+            >
+              <p
                 className={cn(
-                  "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors",
-                  active
-                    ? "bg-muted font-semibold text-foreground"
-                    : "font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  "section-label mb-1.5 px-2.5 text-[10.5px]",
+                  group.priority === "primary"
+                    ? "text-primary/90"
+                    : "text-muted-foreground/85"
                 )}
               >
-                <Icon
-                  className={cn(
-                    "h-4 w-4 shrink-0",
-                    active ? "text-primary" : "text-muted-foreground"
-                  )}
-                />
-                {item.label}
-              </Link>
-            );
-          })}
+                {group.label}
+              </p>
+              <div className="flex flex-col gap-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = isNavRouteActive(effectivePath, item.href);
+                  const isPrimary = group.priority === "primary";
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      prefetch={false}
+                      aria-current={active ? "page" : undefined}
+                      onClick={() => onOpenChange(false)}
+                      className={cn(
+                        "flex h-9 items-center gap-2.5 rounded-md px-2.5 text-sm transition-colors",
+                        active
+                          ? isPrimary
+                            ? "bg-primary/10 font-semibold text-foreground"
+                            : "bg-muted font-semibold text-foreground"
+                          : isPrimary
+                            ? "font-medium text-foreground/85 hover:bg-muted/60 hover:text-foreground"
+                            : "font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      )}
+                    >
+                      <Icon
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          active
+                            ? "text-primary"
+                            : isPrimary
+                              ? "text-primary/80"
+                              : "text-muted-foreground"
+                        )}
+                      />
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
 
           {user?.role === "admin" && (
-            <>
-              <Separator className="my-2.5" />
-              <p className="section-label mb-1 px-2.5">Quản trị</p>
+            <div className="mt-3 border-t border-border/60 pt-3">
+              <p className="section-label mb-1.5 px-2.5 text-[10.5px]">
+                Quản trị
+              </p>
               <Link
                 href="/admin"
                 prefetch={false}
@@ -92,7 +126,7 @@ export function AppMobileDrawer({
                 <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
                 Admin Portal
               </Link>
-            </>
+            </div>
           )}
         </nav>
 

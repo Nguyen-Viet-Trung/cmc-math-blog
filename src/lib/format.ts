@@ -38,6 +38,21 @@ export function formatDateVN(iso: string): string {
   });
 }
 
+/**
+ * Định dạng ngày theo múi giờ Việt Nam (UTC+7) cho các mốc thời gian có giờ/phút
+ * như lịch Giải đấu (Campaign) để tránh bị lùi 1 ngày khi chuyển sang UTC.
+ */
+export function formatDateVNLocal(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "—";
+  return d.toLocaleDateString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    timeZone: "Asia/Ho_Chi_Minh",
+  });
+}
+
 export function formatDateTimeVN(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";

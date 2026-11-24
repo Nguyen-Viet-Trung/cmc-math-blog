@@ -12,11 +12,16 @@ import {
   Newspaper,
   Sparkles,
 } from "lucide-react";
+import {
+  CampaignBadgePill,
+  UserBadgesCabinet,
+} from "@/components/CampaignBadgePill";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
+import { listUserEarnedBadges } from "@/lib/campaign-service";
 import { formatDateVN, formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
 import { getMemberSeoMeta, getPublicMemberProfile } from "@/lib/forum-service";
 import { normalizePagination } from "@/lib/pagination";
@@ -57,7 +62,10 @@ export default async function MemberProfilePage({
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
   const { page, pageSize } = normalizePagination(sp.page, sp.pageSize, 10, 50);
-  const member = await getPublicMemberProfile(id, page, pageSize);
+  const [member, badges] = await Promise.all([
+    getPublicMemberProfile(id, page, pageSize),
+    listUserEarnedBadges(id),
+  ]);
   if (!member) {
     notFound();
   }
@@ -118,10 +126,33 @@ export default async function MemberProfilePage({
                 {member.bio}
               </p>
             )}
+
+            {badges.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                {badges.slice(0, 3).map((badge) => (
+                  <CampaignBadgePill
+                    key={`hero-${badge.id}`}
+                    name={badge.badgeName}
+                    icon={badge.badgeIcon}
+                    color={badge.badgeColor}
+                    size="sm"
+                    title={`${badge.awardTitle} · ${badge.campaignTitle}`}
+                  />
+                ))}
+                {badges.length > 3 && (
+                  <a
+                    href="#badges"
+                    className="rounded-full border border-border bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:text-foreground"
+                  >
+                    +{badges.length - 3} huy hiệu
+                  </a>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="mt-6 grid grid-cols-3 gap-3 border-t border-border pt-5 text-center tabular-nums">
+        <div className="mt-6 grid grid-cols-2 gap-3 border-t border-border pt-5 text-center tabular-nums sm:grid-cols-4">
           <div>
             <p className="text-lg font-bold text-foreground sm:text-xl">
               {member.totalEarnedPoints}đ
@@ -130,13 +161,24 @@ export default async function MemberProfilePage({
               Điểm cống hiến
             </p>
           </div>
-          <div className="border-x border-border">
+          <div className="sm:border-l sm:border-border">
             <p className="text-lg font-bold text-success sm:text-xl">
               {member.solvedCount}
             </p>
             <p className="text-[11px] text-muted-foreground">Lời giải đúng</p>
           </div>
-          <div>
+          <a
+            href="#badges"
+            className="rounded-md transition-colors hover:bg-muted/50 sm:border-l sm:border-border"
+          >
+            <p className="text-lg font-bold text-bounty sm:text-xl">
+              {badges.length}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              Huy hiệu &amp; Giải
+            </p>
+          </a>
+          <div className="sm:border-l sm:border-border">
             <p className="text-lg font-bold text-foreground sm:text-xl">
               {member.threadsCount} · {member.repliesCount}
             </p>
@@ -146,6 +188,12 @@ export default async function MemberProfilePage({
           </div>
         </div>
       </Card>
+
+      <UserBadgesCabinet
+        id="badges"
+        badges={badges}
+        ownerName={member.displayName}
+      />
 
       <section className="space-y-3">
         <h2 className="heading-2">

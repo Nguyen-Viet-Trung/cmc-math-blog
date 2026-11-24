@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { CACHE_TAGS } from "./cache-tags";
+import { evaluateAndGrantCampaignAwardsTx } from "./campaign-service";
 import { getSql } from "./db";
 import {
   getFallbackDefaultPoints,
@@ -41,6 +42,7 @@ import type {
   ThreadDiscussionSnapshot,
   ThreadSummary,
   ThreadType,
+  UnlockedCampaignAwardSummary,
   UserProfile,
 } from "./types";
 
@@ -1407,6 +1409,7 @@ export async function acceptReplyTransaction(params: {
   solverId: string;
   solverName: string;
   threadTitle: string;
+  unlockedAwards: UnlockedCampaignAwardSummary[];
 }> {
   const sql = getSql();
 
@@ -1480,11 +1483,22 @@ export async function acceptReplyTransaction(params: {
       VALUES (${reply.author_id}, ${bounty}, 'accepted_answer', ${reason}, ${params.threadId}, ${params.caller.id})
     `;
 
+    // Tự động xét & trao Award + Badge nếu bài toán thuộc Giải đấu (Campaign) đang diễn ra
+    const unlockedAwards =
+      params.caller.role === "admin"
+        ? await evaluateAndGrantCampaignAwardsTx(tx, {
+            threadId: params.threadId,
+            solverId: String(reply.author_id),
+            actorId: params.caller.id,
+          })
+        : [];
+
     return {
       awardedPoints: bounty,
       solverId: String(reply.author_id),
       solverName: String(reply.solver_name),
       threadTitle: String(thread.title),
+      unlockedAwards,
     };
   });
 }
@@ -1502,6 +1516,7 @@ export async function awardChallengeReplyTransaction(params: {
   solverId: string;
   solverName: string;
   threadTitle: string;
+  unlockedAwards: UnlockedCampaignAwardSummary[];
 }> {
   const sql = getSql();
 
@@ -1573,11 +1588,18 @@ export async function awardChallengeReplyTransaction(params: {
       VALUES (${reply.author_id}, ${bounty}, 'challenge_reward', ${reason}, ${params.threadId}, ${params.caller.id})
     `;
 
+    const unlockedAwards = await evaluateAndGrantCampaignAwardsTx(tx, {
+      threadId: params.threadId,
+      solverId: String(reply.author_id),
+      actorId: params.caller.id,
+    });
+
     return {
       awardedPoints: bounty,
       solverId: String(reply.author_id),
       solverName: String(reply.solver_name),
       threadTitle: String(thread.title),
+      unlockedAwards,
     };
   });
 }

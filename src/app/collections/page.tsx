@@ -13,6 +13,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { listPublishedCollections } from "@/lib/collection-service";
+import { getCoverAccentClass } from "@/lib/cover-accent";
 import { formatRelativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CollectionsAdminAction } from "./_components/CollectionsAdminAction";
@@ -23,14 +24,6 @@ export const metadata: Metadata = {
   title: "Bộ sưu tập Chuyên đề",
   description:
     "Các chuỗi chuyên đề Toán học, tuyển tập bất đẳng thức, hình học và đề thi ôn luyện được Ban Quản Trị tuyển chọn.",
-};
-
-const ACCENT_BAR: Record<string, string> = {
-  blue: "bg-primary",
-  indigo: "bg-primary/70",
-  emerald: "bg-success",
-  amber: "bg-bounty",
-  rose: "bg-destructive",
 };
 
 export default async function CollectionsPage() {
@@ -81,7 +74,7 @@ export default async function CollectionsPage() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           {collections.map((col) => {
-            const accent = ACCENT_BAR[col.coverColor] ?? ACCENT_BAR.blue;
+            const accent = getCoverAccentClass(col.coverColor);
             return (
               <Link
                 key={col.id}

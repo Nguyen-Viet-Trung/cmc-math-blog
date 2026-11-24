@@ -29,6 +29,7 @@ export interface AdminDashboardCounts {
   feedbacksCount: number;
   openFeedbacksCount: number;
   collectionsCount: number;
+  campaignsCount: number;
 }
 
 const getCachedAdminDashboardCounts = unstable_cache(
@@ -44,7 +45,8 @@ const getCachedAdminDashboardCounts = unstable_cache(
         (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
         f_stats.feedbacks_count,
         f_stats.open_feedbacks_count,
-        (SELECT COUNT(*)::int FROM public.collections) AS collections_count
+        (SELECT COUNT(*)::int FROM public.collections) AS collections_count,
+        (SELECT COUNT(*)::int FROM public.campaigns) AS campaigns_count
       FROM (
         SELECT
           COUNT(*)::int AS redemptions_count,
@@ -69,6 +71,7 @@ const getCachedAdminDashboardCounts = unstable_cache(
       feedbacksCount: Number(r.feedbacks_count ?? 0),
       openFeedbacksCount: Number(r.open_feedbacks_count ?? 0),
       collectionsCount: Number(r.collections_count ?? 0),
+      campaignsCount: Number(r.campaigns_count ?? 0),
     };
   },
   ["admin-dashboard-counts"],
@@ -79,6 +82,7 @@ const getCachedAdminDashboardCounts = unstable_cache(
       CACHE_TAGS.threads,
       CACHE_TAGS.feedbacks,
       CACHE_TAGS.collections,
+      CACHE_TAGS.campaigns,
       CACHE_TAGS.leaderboard,
     ],
   }
@@ -96,6 +100,7 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       feedbacksCount: 0,
       openFeedbacksCount: 0,
       collectionsCount: 0,
+      campaignsCount: 0,
     };
   }
   return getCachedAdminDashboardCounts();

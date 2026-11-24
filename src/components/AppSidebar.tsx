@@ -6,7 +6,7 @@ import { LogIn, LogOut, ShieldCheck, Sigma } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { MAIN_NAV_ITEMS, isNavRouteActive } from "@/lib/navigation";
+import { NAV_GROUPS, isNavRouteActive } from "@/lib/navigation";
 import type { UserProfile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -69,46 +69,93 @@ export const AppSidebar = memo(function AppSidebar({
         </Link>
       </div>
 
-      {/* Navigation links */}
+      {/* Navigation links grouped by priority */}
       <div className="flex-1 overflow-y-auto px-2 py-3">
-        <nav className="flex flex-col gap-0.5">
-          {MAIN_NAV_ITEMS.map((item) => {
-            const Icon = item.icon;
-            const active = isNavRouteActive(effectivePath, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                prefetch={false}
-                aria-current={active ? "page" : undefined}
-                title={collapsed ? item.label : undefined}
-                className={cn(
-                  "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",
-                  collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
-                  active
-                    ? "bg-muted font-semibold text-foreground"
-                    : "font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                )}
-              >
-                {active && !collapsed && (
-                  <span className="absolute bottom-1.5 left-0 top-1.5 w-[2.5px] rounded-full bg-primary" />
-                )}
-                <Icon
+        <nav aria-label="Danh mục chức năng" className="flex flex-col">
+          {NAV_GROUPS.map((group, groupIdx) => (
+            <div
+              key={group.id}
+              className={cn(
+                groupIdx > 0 &&
+                  (collapsed
+                    ? "mt-2.5 border-t border-border/70 pt-2.5"
+                    : "mt-3.5 border-t border-border/60 pt-3")
+              )}
+            >
+              {!collapsed && (
+                <p
+                  title={group.description}
                   className={cn(
-                    "h-4 w-4 shrink-0",
-                    active ? "text-primary" : "text-muted-foreground"
+                    "section-label mb-1.5 px-2.5 text-[10.5px]",
+                    group.priority === "primary"
+                      ? "text-primary/90"
+                      : "text-muted-foreground/85"
                   )}
-                />
-                {!collapsed && <span className="truncate">{item.label}</span>}
-              </Link>
-            );
-          })}
+                >
+                  {group.label}
+                </p>
+              )}
+              <div className="flex flex-col gap-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const active = isNavRouteActive(effectivePath, item.href);
+                  const isPrimary = group.priority === "primary";
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      prefetch={false}
+                      aria-current={active ? "page" : undefined}
+                      aria-label={collapsed ? item.label : undefined}
+                      title={collapsed ? `${group.label}: ${item.label}` : undefined}
+                      className={cn(
+                        "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",
+                        collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",
+                        active
+                          ? isPrimary
+                            ? "bg-primary/10 font-semibold text-foreground"
+                            : "bg-muted font-semibold text-foreground"
+                          : isPrimary
+                            ? "font-medium text-foreground/85 hover:bg-muted/60 hover:text-foreground"
+                            : "font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                      )}
+                    >
+                      {active && !collapsed && (
+                        <span className="absolute bottom-1.5 left-0 top-1.5 w-[2.5px] rounded-full bg-primary" />
+                      )}
+                      <Icon
+                        className={cn(
+                          "h-4 w-4 shrink-0",
+                          active
+                            ? "text-primary"
+                            : isPrimary
+                              ? "text-primary/80"
+                              : "text-muted-foreground"
+                        )}
+                      />
+                      {!collapsed && (
+                        <span className="truncate">{item.label}</span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
 
         {user?.role === "admin" && (
-          <div className="mt-4 border-t border-border pt-3">
+          <div
+            className={cn(
+              collapsed
+                ? "mt-2.5 border-t border-border/70 pt-2.5"
+                : "mt-3.5 border-t border-border/60 pt-3"
+            )}
+          >
             {!collapsed && (
-              <p className="section-label mb-1.5 px-2.5">Quản trị</p>
+              <p className="section-label mb-1.5 px-2.5 text-[10.5px]">
+                Quản trị
+              </p>
             )}
             <Link
               href="/admin"
@@ -116,7 +163,8 @@ export const AppSidebar = memo(function AppSidebar({
               aria-current={
                 isNavRouteActive(effectivePath, "/admin") ? "page" : undefined
               }
-              title={collapsed ? "Admin Portal" : undefined}
+              aria-label={collapsed ? "Admin Portal" : undefined}
+              title={collapsed ? "Quản trị: Admin Portal" : undefined}
               className={cn(
                 "relative flex h-9 items-center rounded-md text-[13.5px] transition-colors",
                 collapsed ? "justify-center px-0" : "gap-2.5 px-2.5",

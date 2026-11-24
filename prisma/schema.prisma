@@ -67,6 +67,9 @@ model profiles {
   thread_bookmarks                                           thread_bookmarks[]
   collections                                                collections[]
   site_documents                                             site_documents[]
+  campaigns                                                  campaigns[]
+  user_campaign_awards_user                                  user_campaign_awards[] @relation("user_campaign_awards_user")
+  user_campaign_awards_granter                               user_campaign_awards[] @relation("user_campaign_awards_granter")
 
   @@index([total_earned_points(sort: Desc), solved_count(sort: Desc)], map: "idx_profiles_leaderboard")
 }
@@ -138,7 +141,9 @@ model rewards {
   is_active   Boolean       @default(true)
   created_at  DateTime      @default(now()) @db.Timestamptz(6)
   updated_at  DateTime      @default(now()) @db.Timestamptz(6)
-  redemptions redemptions[]
+  redemptions          redemptions[]
+  campaign_awards      campaign_awards[]
+  user_campaign_awards user_campaign_awards[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -175,6 +180,7 @@ model threads {
   replies              replies[]
   thread_bookmarks     thread_bookmarks[]
   collection_threads   collection_threads[]
+  campaign_threads     campaign_threads[]
   profiles             profiles             @relation(fields: [author_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   categories           categories           @relation(fields: [category_id], references: [id], onUpdate: NoAction)
 
@@ -281,4 +287,89 @@ model site_documents {
   profiles   profiles? @relation(fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([updated_by], map: "idx_site_documents_updated_by")
+}
+
+/// This model contains row level security and requires additional setup for migrations.
+model campaigns {
+  id                   String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  slug                 String                 @unique
+  title                String
+  description          String                 @default("")
+  cover_color          String                 @default("blue")
+  starts_at            DateTime               @db.Timestamptz(6)
+  ends_at              DateTime               @db.Timestamptz(6)
+  is_published         Boolean                @default(true)
+  created_by           String?                @db.Uuid
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  profiles             profiles?              @relation(fields: [created_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  campaign_threads     campaign_threads[]
+  campaign_awards      campaign_awards[]
+  user_campaign_awards user_campaign_awards[]
+
+  @@index([is_published, starts_at(sort: Desc), ends_at(sort: Desc)], map: "idx_campaigns_published_dates")
+  @@index([created_by], map: "idx_campaigns_created_by")
+}
+
+/// This model contains row level security and requires additional setup for migrations.
+model campaign_threads {
+  campaign_id String    @db.Uuid
+  thread_id   String    @db.Uuid
+  sort_order  Int       @default(0)
+  note        String    @default("")
+  added_at    DateTime  @default(now()) @db.Timestamptz(6)
+  campaigns   campaigns @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  threads     threads   @relation(fields: [thread_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([campaign_id, thread_id])
+  @@index([campaign_id, sort_order, added_at], map: "idx_campaign_threads_order")
+  @@index([thread_id], map: "idx_campaign_threads_thread_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations.
+model campaign_awards {
+  id                       String                 @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaign_id              String                 @db.Uuid
+  title                    String
+  description              String                 @default("")
+  required_completed_count Int                    @default(1)
+  bonus_points             Int                    @default(0)
+  reward_id                String?                @db.Uuid
+  badge_name               String
+  badge_icon               String                 @default("trophy")
+  badge_color              String                 @default("amber")
+  sort_order               Int                    @default(0)
+  created_at               DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at               DateTime               @default(now()) @db.Timestamptz(6)
+  campaigns                campaigns              @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rewards                  rewards?               @relation(fields: [reward_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  user_campaign_awards     user_campaign_awards[]
+
+  @@index([campaign_id, required_completed_count, sort_order], map: "idx_campaign_awards_campaign_order")
+  @@index([reward_id], map: "idx_campaign_awards_reward_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations.
+model user_campaign_awards {
+  id              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  campaign_id     String          @db.Uuid
+  award_id        String          @db.Uuid
+  user_id         String          @db.Uuid
+  completed_count Int             @default(1)
+  points_awarded  Int             @default(0)
+  reward_id       String?         @db.Uuid
+  reward_status   String          @default("none")
+  awarded_by      String?         @db.Uuid
+  awarded_at      DateTime        @default(now()) @db.Timestamptz(6)
+  campaigns       campaigns       @relation(fields: [campaign_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  campaign_awards campaign_awards @relation(fields: [award_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  rewards         rewards?        @relation(fields: [reward_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
+  recipient       profiles        @relation("user_campaign_awards_user", fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  granter         profiles?       @relation("user_campaign_awards_granter", fields: [awarded_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@unique([award_id, user_id])
+  @@index([user_id, awarded_at(sort: Desc)], map: "idx_user_campaign_awards_user")
+  @@index([campaign_id, awarded_at(sort: Desc)], map: "idx_user_campaign_awards_campaign")
+  @@index([reward_id], map: "idx_user_campaign_awards_reward")
+  @@index([awarded_by], map: "idx_user_campaign_awards_awarded_by")
 }

@@ -226,7 +226,8 @@ export interface PointTransactionItem {
     | "admin_deduct"
     | "reward_redeem"
     | "reward_refund"
-    | "challenge_reward";
+    | "challenge_reward"
+    | "campaign_award";
   reason: string;
   referenceId: string | null;
   createdAt: string;
@@ -287,7 +288,8 @@ export type NotificationType =
   | "redemption_update"
   | "system"
   | "reply_mention"
-  | "challenge_award";
+  | "challenge_award"
+  | "campaign_award";
 
 export interface NotificationItem {
   id: string;
@@ -359,4 +361,173 @@ export interface PublicMemberProfile {
   threadsCount: number;
   repliesCount: number;
   recentThreads: ThreadSummary[];
+}
+
+export type CampaignPhase = "upcoming" | "active" | "ended";
+
+export type BadgeIconKey =
+  | "trophy"
+  | "medal"
+  | "crown"
+  | "star"
+  | "flame"
+  | "award"
+  | "sparkles"
+  | "shield";
+
+export type BadgeColorKey =
+  | "amber"
+  | "blue"
+  | "emerald"
+  | "rose"
+  | "indigo"
+  | "slate";
+
+export type CampaignRewardStatus = "none" | "pending" | "fulfilled";
+
+export interface CampaignBadgePreview {
+  awardId: string;
+  badgeName: string;
+  badgeIcon: BadgeIconKey;
+  badgeColor: BadgeColorKey;
+  requiredCompletedCount: number;
+}
+
+export interface CampaignAwardItem {
+  id: string;
+  campaignId: string;
+  title: string;
+  description: string;
+  requiredCompletedCount: number;
+  bonusPoints: number;
+  rewardId: string | null;
+  rewardName: string | null;
+  rewardImageUrl: string | null;
+  badgeName: string;
+  badgeIcon: BadgeIconKey;
+  badgeColor: BadgeColorKey;
+  sortOrder: number;
+  grantedCount: number;
+}
+
+export interface CampaignSummary {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  coverColor: string;
+  startsAt: string;
+  endsAt: string;
+  isPublished: boolean;
+  threadCount: number;
+  awardCount: number;
+  awardeesCount: number;
+  badgesPreview: CampaignBadgePreview[];
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CampaignThreadItem {
+  thread: ThreadSummary;
+  sortOrder: number;
+  note: string;
+  addedAt: string;
+}
+
+export interface CampaignGrantItem {
+  id: string;
+  campaignId: string;
+  awardId: string;
+  awardTitle: string;
+  badgeName: string;
+  badgeIcon: BadgeIconKey;
+  badgeColor: BadgeColorKey;
+  userId: string;
+  userDisplayName: string;
+  userAvatarUrl: string | null;
+  userGradeLevel: string;
+  completedCount: number;
+  pointsAwarded: number;
+  rewardId: string | null;
+  rewardName: string | null;
+  rewardStatus: CampaignRewardStatus;
+  awardedAt: string;
+}
+
+export interface CampaignDetail extends CampaignSummary {
+  items: CampaignThreadItem[];
+  awards: CampaignAwardItem[];
+  recentGrants: CampaignGrantItem[];
+}
+
+export interface UserEarnedBadge {
+  id: string;
+  campaignId: string;
+  campaignSlug: string;
+  campaignTitle: string;
+  awardId: string;
+  awardTitle: string;
+  badgeName: string;
+  badgeIcon: BadgeIconKey;
+  badgeColor: BadgeColorKey;
+  pointsAwarded: number;
+  rewardId: string | null;
+  rewardName: string | null;
+  rewardStatus: CampaignRewardStatus;
+  awardedAt: string;
+}
+
+export interface UnlockedCampaignAwardSummary {
+  campaignId: string;
+  campaignSlug: string;
+  campaignTitle: string;
+  awardId: string;
+  awardTitle: string;
+  badgeName: string;
+  bonusPoints: number;
+  rewardName: string | null;
+}
+
+export interface PublicBadgeCatalogItem {
+  awardId: string;
+  campaignId: string;
+  campaignSlug: string;
+  campaignTitle: string;
+  campaignStartsAt: string;
+  campaignEndsAt: string;
+  awardTitle: string;
+  awardDescription: string;
+  requiredCompletedCount: number;
+  bonusPoints: number;
+  rewardName: string | null;
+  badgeName: string;
+  badgeIcon: BadgeIconKey;
+  badgeColor: BadgeColorKey;
+  grantedCount: number;
+}
+
+export interface BadgeCollectorPreview {
+  id: string;
+  badgeName: string;
+  badgeIcon: BadgeIconKey;
+  badgeColor: BadgeColorKey;
+}
+
+export interface BadgeCollectorSummary {
+  userId: string;
+  displayName: string;
+  nickname: string;
+  avatarUrl: string | null;
+  gradeLevel: string;
+  badgeCount: number;
+  totalBonusPoints: number;
+  recentBadges: BadgeCollectorPreview[];
+}
+
+export interface PublicBadgeCollectionData {
+  badges: PublicBadgeCatalogItem[];
+  collectors: BadgeCollectorSummary[];
+  totalGrantsCount: number;
+  totalAwardeesCount: number;
 }

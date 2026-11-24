@@ -6,6 +6,7 @@ import {
   FileText,
   Gift,
   Layers,
+  Medal,
   MessageSquareWarning,
   ScrollText,
   Settings,
@@ -66,6 +67,14 @@ export function buildAdminNavGroups(
             "Tạo lộ trình ôn tập và sắp xếp các bài toán tiêu biểu theo chủ đề.",
           icon: Layers,
           badgeText: String(counts.collectionsCount),
+        },
+        {
+          id: "campaigns",
+          label: "Giải đấu & Huy hiệu",
+          description:
+            "Thiết kế giải đấu theo thời gian, gắn thử thách, cài đặt Award (điểm/quà Shop) và Huy hiệu cho học sinh.",
+          icon: Medal,
+          badgeText: String(counts.campaignsCount),
         },
         {
           id: "replies",

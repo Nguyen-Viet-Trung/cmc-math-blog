@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { X } from "lucide-react";
 import { Alert } from "@/components/ui/alert";
@@ -78,6 +78,14 @@ const AdminCollectionsTab = dynamic(
   { loading: () => <AdminTabSkeleton /> }
 );
 
+const AdminCampaignsTab = dynamic(
+  () =>
+    import("./_components/AdminCampaignsTab").then(
+      (m) => m.AdminCampaignsTab
+    ),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
 export function AdminDashboardClient({
   isDemo,
   settings,
@@ -135,6 +143,20 @@ export function AdminDashboardClient({
       window.history.replaceState(null, "", nextUrl);
     }
   }
+
+  const handleConsumedCollectionsCreate = useCallback(() => {
+    setPendingCreate(false);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/admin?tab=collections");
+    }
+  }, []);
+
+  const handleConsumedCampaignsCreate = useCallback(() => {
+    setPendingCreate(false);
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/admin?tab=campaigns");
+    }
+  }, []);
 
   return (
     <div className="space-y-6">
@@ -262,16 +284,14 @@ export function AdminDashboardClient({
             <AdminCollectionsTab
               onNotice={setNotice}
               autoOpenCreate={pendingCreate}
-              onConsumedAutoOpen={() => {
-                setPendingCreate(false);
-                if (typeof window !== "undefined") {
-                  window.history.replaceState(
-                    null,
-                    "",
-                    "/admin?tab=collections"
-                  );
-                }
-              }}
+              onConsumedAutoOpen={handleConsumedCollectionsCreate}
+            />
+          )}
+          {tab === "campaigns" && (
+            <AdminCampaignsTab
+              onNotice={setNotice}
+              autoOpenCreate={pendingCreate}
+              onConsumedAutoOpen={handleConsumedCampaignsCreate}
             />
           )}
           {tab === "replies" && (

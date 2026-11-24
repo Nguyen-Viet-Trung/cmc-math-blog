@@ -5,6 +5,14 @@ DEPLOY.md
 .env.*
 !.env.example
 
+# Tài liệu planning / roadmap nội bộ (KHÔNG BAO GIỜ đẩy lên Git)
+roadmap-v2.txt
+ROADMAP-PLANNING-V2.md
+*roadmap*.txt
+*ROADMAP*.md
+*PLANNING*.md
+planning/
+
 # Dependencies & Build artifacts
 node_modules/
 .next/

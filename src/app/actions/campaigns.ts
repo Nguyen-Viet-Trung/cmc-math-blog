@@ -2,6 +2,12 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
+import {
+  buildSafeActivitySummary,
+  deleteActivitiesForAward,
+  deleteActivitiesForCampaign,
+  recordActivity,
+} from "@/lib/activity-service";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import {
   slugifyCampaignTitle,
@@ -31,8 +37,10 @@ async function requireAdmin() {
 function revalidateCampaignPaths(slug?: string, userId?: string) {
   revalidateTag(CACHE_TAGS.campaigns);
   revalidateTag(CACHE_TAGS.leaderboard);
+  revalidateTag(CACHE_TAGS.activities);
   revalidatePath("/campaigns");
   revalidatePath("/badges");
+  revalidatePath("/activity");
   if (slug) {
     revalidatePath(`/campaigns/${slug}`);
   } else {
@@ -69,6 +77,14 @@ export async function upsertCampaignAction(input: {
       if (!UUID_REGEX.test(input.id)) {
         return { ok: false, error: "Mã giải đấu không hợp lệ." };
       }
+      const prevRows = await sql`
+        SELECT is_published FROM public.campaigns WHERE id = ${input.id} LIMIT 1
+      `;
+      if (prevRows.length === 0) {
+        return { ok: false, error: "Không tìm thấy giải đấu cần cập nhật." };
+      }
+      const wasPublished = Boolean(prevRows[0].is_published);
+
       const rows = await sql`
         UPDATE public.campaigns
         SET
@@ -80,12 +96,31 @@ export async function upsertCampaignAction(input: {
           is_published = ${Boolean(input.isPublished)},
           updated_at = NOW()
         WHERE id = ${input.id}
-        RETURNING slug
+        RETURNING id, slug
       `;
       if (rows.length === 0) {
         return { ok: false, error: "Không tìm thấy giải đấu cần cập nhật." };
       }
       const slug = String(rows[0].slug);
+      const campaignId = String(rows[0].id);
+      if (!wasPublished && Boolean(input.isPublished)) {
+        await recordActivity({
+          actorId: admin.id,
+          eventType: "campaign_launched",
+          targetType: "campaign",
+          targetId: campaignId,
+          title: check.title,
+          summary: buildSafeActivitySummary(check.description),
+          href: `/campaigns/${slug}`,
+          metadata: {
+            slug,
+            startsAt: check.startsAtIso,
+            endsAt: check.endsAtIso,
+          },
+        });
+      } else if (wasPublished && !Boolean(input.isPublished)) {
+        await deleteActivitiesForCampaign(campaignId);
+      }
       revalidateCampaignPaths(slug);
       return { ok: true, slug };
     }
@@ -102,7 +137,7 @@ export async function upsertCampaignAction(input: {
       slug = `${baseSlug}-${suffix++}`;
     }
 
-    await sql`
+    const inserted = await sql`
       INSERT INTO public.campaigns (
         slug,
         title,
@@ -123,7 +158,26 @@ export async function upsertCampaignAction(input: {
         ${Boolean(input.isPublished)},
         ${admin.id}
       )
+      RETURNING id
     `;
+
+    const campaignId = String(inserted[0].id);
+    if (Boolean(input.isPublished)) {
+      await recordActivity({
+        actorId: admin.id,
+        eventType: "campaign_launched",
+        targetType: "campaign",
+        targetId: campaignId,
+        title: check.title,
+        summary: buildSafeActivitySummary(check.description),
+        href: `/campaigns/${slug}`,
+        metadata: {
+          slug,
+          startsAt: check.startsAtIso,
+          endsAt: check.endsAtIso,
+        },
+      });
+    }
 
     revalidateCampaignPaths(slug);
     return { ok: true, slug };
@@ -150,6 +204,7 @@ export async function deleteCampaignAction(
     if (rows.length === 0) {
       return { ok: false, error: "Không tìm thấy giải đấu cần xóa." };
     }
+    await deleteActivitiesForCampaign(campaignId);
     revalidateCampaignPaths(String(rows[0].slug));
     return { ok: true };
   } catch (err) {
@@ -365,6 +420,7 @@ export async function deleteCampaignAwardAction(
       SET updated_at = NOW()
       WHERE id = ${deleted[0].campaign_id}
     `;
+    await deleteActivitiesForAward(awardId);
     revalidateCampaignPaths();
     return { ok: true };
   } catch {
@@ -508,10 +564,28 @@ export async function grantCampaignAwardManuallyAction(input: {
       };
     });
 
+    const bonusNote =
+      res.bonusPoints > 0 ? ` (+${res.bonusPoints} điểm)` : "";
+    const giftNote = res.rewardName ? ` · Quà tặng: ${res.rewardName}` : "";
+
+    await recordActivity({
+      actorId: input.userId,
+      eventType: "badge_earned",
+      targetType: "award",
+      targetId: input.awardId,
+      title: res.badgeName,
+      summary: `${res.awardTitle} — ${res.campaignTitle}${bonusNote}`,
+      href: `/campaigns/${res.campaignSlug}`,
+      metadata: {
+        campaignId: input.campaignId,
+        campaignSlug: res.campaignSlug,
+        campaignTitle: res.campaignTitle,
+        awardTitle: res.awardTitle,
+        bonusPoints: res.bonusPoints,
+      },
+    });
+
     after(async () => {
-      const bonusNote =
-        res.bonusPoints > 0 ? ` (+${res.bonusPoints} điểm)` : "";
-      const giftNote = res.rewardName ? ` · Quà tặng: ${res.rewardName}` : "";
       await createNotification({
         userId: input.userId,
         type: "campaign_award",

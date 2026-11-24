@@ -1,6 +1,18 @@
 import type { NotificationPrefs } from "./notification-prefs";
+import type {
+  OnboardingProgress,
+  OnboardingState,
+  OnboardingStepId,
+  OnboardingStepStatus,
+} from "./onboarding";
 
-export type { NotificationPrefs };
+export type {
+  NotificationPrefs,
+  OnboardingProgress,
+  OnboardingState,
+  OnboardingStepId,
+  OnboardingStepStatus,
+};
 
 export interface UserProfile {
   id: string;
@@ -16,6 +28,8 @@ export interface UserProfile {
   solvedCount: number;
   isBanned: boolean;
   notificationPrefs?: NotificationPrefs;
+  onboardingState?: OnboardingState;
+  lastActiveAt?: string | null;
   joinedAt: string;
   createdAt: string;
 }
@@ -575,4 +589,48 @@ export interface ContentReportItem {
   resolutionNote: string;
   createdAt: string;
   resolvedAt: string | null;
+}
+
+export type ActivityEventType =
+  | "new_question"
+  | "new_solution"
+  | "accepted_solution"
+  | "badge_earned"
+  | "campaign_launched";
+
+export type ActivityTargetType = "thread" | "reply" | "campaign" | "award";
+
+export type ActivityFeedTab = "discover" | "following";
+
+export interface ActivityCursor {
+  createdAt: string;
+  id: string;
+}
+
+export interface ActivityItem {
+  id: string;
+  actorId: string;
+  eventType: ActivityEventType;
+  targetType: ActivityTargetType;
+  targetId: string;
+  title: string;
+  summary: string;
+  href: string;
+  categorySlug: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+  actor: {
+    id: string;
+    displayName: string;
+    nickname: string;
+    avatarUrl: string | null;
+    gradeLevel: string;
+    role: "student" | "admin";
+  };
+}
+
+export interface ActivityFeedPage {
+  items: ActivityItem[];
+  nextCursor: string | null;
+  hasMore: boolean;
 }

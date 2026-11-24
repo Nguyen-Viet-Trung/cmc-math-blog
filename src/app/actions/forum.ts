@@ -2,6 +2,12 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
+import {
+  buildSafeActivitySummary,
+  deleteActivitiesForReplies,
+  deleteActivitiesForThread,
+  recordActivity,
+} from "@/lib/activity-service";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -162,12 +168,36 @@ export async function createThreadAction(input: {
         ${challengeEndsAtIso}::timestamptz,
         ${initialBounty}
       )
-      RETURNING id
+      RETURNING
+        id,
+        (SELECT slug FROM public.categories WHERE id = category_id) AS category_slug
     `;
 
     const threadId = String(rows[0].id);
+    const categorySlug = rows[0].category_slug
+      ? String(rows[0].category_slug)
+      : null;
+
+    await recordActivity({
+      actorId: user.id,
+      eventType: "new_question",
+      targetType: "thread",
+      targetId: threadId,
+      title,
+      summary: buildSafeActivitySummary(content, { isBlindSubmission: false }),
+      href: `/threads/${threadId}`,
+      categorySlug,
+      metadata: {
+        threadType,
+        gradeTag: input.gradeTag.trim() || "Chung",
+        bountyPoints: initialBounty,
+      },
+    });
+
     revalidateTag(CACHE_TAGS.threads);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath("/");
+    revalidatePath("/activity");
     revalidatePath("/admin");
     return { ok: true, threadId };
   } catch (err) {
@@ -246,10 +276,12 @@ export async function createReplyAction(input: {
     const sql = getSql();
     const threadMeta = await sql.begin(async (tx) => {
       const threads = await tx`
-        SELECT status, author_id, title, thread_type, challenge_ends_at
-        FROM public.threads
-        WHERE id = ${input.threadId}
-        FOR UPDATE
+        SELECT t.status, t.author_id, t.title, t.thread_type, t.challenge_ends_at,
+               c.slug AS category_slug
+        FROM public.threads t
+        LEFT JOIN public.categories c ON c.id = t.category_id
+        WHERE t.id = ${input.threadId}
+        FOR UPDATE OF t
       `;
       if (threads.length === 0) {
         throw new Error("Không tìm thấy bài toán.");
@@ -301,7 +333,7 @@ export async function createReplyAction(input: {
         parentAuthorId = String(pRow.author_id);
       }
 
-      await tx`
+      const insertedReply = await tx`
         INSERT INTO public.replies (thread_id, author_id, parent_reply_id, content, image_urls)
         VALUES (
           ${input.threadId},
@@ -310,6 +342,7 @@ export async function createReplyAction(input: {
           ${content || "(Xem lời giải chi tiết trong hình ảnh đính kèm)"},
           ${sql.array(safeImageUrls)}
         )
+        RETURNING id
       `;
 
       await tx`
@@ -319,11 +352,34 @@ export async function createReplyAction(input: {
       `;
 
       return {
+        replyId: String(insertedReply[0].id),
         authorId: String(threads[0].author_id),
         title: String(threads[0].title),
+        threadType,
+        categorySlug: threads[0].category_slug
+          ? String(threads[0].category_slug)
+          : null,
         parentAuthorId,
         blindActive,
       };
+    });
+
+    await recordActivity({
+      actorId: user.id,
+      eventType: "new_solution",
+      targetType: "reply",
+      targetId: threadMeta.replyId,
+      title: threadMeta.title,
+      summary: buildSafeActivitySummary(content, {
+        isBlindSubmission: threadMeta.blindActive,
+      }),
+      href: `/threads/${input.threadId}`,
+      categorySlug: threadMeta.categorySlug,
+      metadata: {
+        threadId: input.threadId,
+        threadType: threadMeta.threadType,
+        isBlindSubmission: threadMeta.blindActive,
+      },
     });
 
     after(async () => {
@@ -407,7 +463,9 @@ export async function createReplyAction(input: {
       await Promise.all(tasks);
     });
     revalidateTag(CACHE_TAGS.threads);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath("/");
+    revalidatePath("/activity");
     return { ok: true };
   } catch (err) {
     return {
@@ -440,6 +498,41 @@ export async function acceptReplyAction(
       replyId,
     });
 
+    await Promise.all([
+      recordActivity({
+        actorId: res.solverId,
+        eventType: "accepted_solution",
+        targetType: "reply",
+        targetId: replyId,
+        title: res.threadTitle,
+        summary: `Lời giải được chọn đúng (+${res.awardedPoints} điểm).`,
+        href: `/threads/${threadId}`,
+        categorySlug: res.categorySlug,
+        metadata: {
+          threadId,
+          awardedPoints: res.awardedPoints,
+        },
+      }),
+      ...res.unlockedAwards.map((aw) =>
+        recordActivity({
+          actorId: res.solverId,
+          eventType: "badge_earned",
+          targetType: "award",
+          targetId: aw.awardId,
+          title: aw.badgeName,
+          summary: `${aw.awardTitle} — ${aw.campaignTitle}${aw.bonusPoints > 0 ? ` (+${aw.bonusPoints}đ)` : ""}`,
+          href: `/campaigns/${aw.campaignSlug}`,
+          metadata: {
+            campaignId: aw.campaignId,
+            campaignSlug: aw.campaignSlug,
+            campaignTitle: aw.campaignTitle,
+            awardTitle: aw.awardTitle,
+            bonusPoints: aw.bonusPoints,
+          },
+        })
+      ),
+    ]);
+
     after(async () => {
       await Promise.all([
         broadcastThreadEventFromServer({
@@ -468,6 +561,7 @@ export async function acceptReplyAction(
     });
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
+    revalidateTag(CACHE_TAGS.activities);
     if (res.unlockedAwards.length > 0) {
       revalidateTag(CACHE_TAGS.campaigns);
       revalidatePath("/campaigns");
@@ -478,6 +572,7 @@ export async function acceptReplyAction(
     }
     revalidatePath(`/threads/${threadId}`);
     revalidatePath("/");
+    revalidatePath("/activity");
     revalidatePath("/leaderboard");
     const badgeSuffix =
       res.unlockedAwards.length > 0
@@ -718,8 +813,9 @@ export async function deleteOwnThreadAction(
 
     const [tRows, rRows] = await Promise.all([
       sql`SELECT image_urls FROM public.threads WHERE id = ${threadId}`,
-      sql`SELECT image_urls FROM public.replies WHERE thread_id = ${threadId}`,
+      sql`SELECT id, image_urls FROM public.replies WHERE thread_id = ${threadId}`,
     ]);
+    const deletedReplyIds = rRows.map((item) => String(item.id));
     const orphanUrls: string[] = [];
     for (const item of [...tRows, ...rRows]) {
       if (Array.isArray(item.image_urls)) {
@@ -728,6 +824,7 @@ export async function deleteOwnThreadAction(
     }
 
     await sql`DELETE FROM public.threads WHERE id = ${threadId}`;
+    await deleteActivitiesForThread(threadId, deletedReplyIds);
     after(async () => {
       await deleteStorageImagesByUrls(
         orphanUrls,
@@ -738,7 +835,9 @@ export async function deleteOwnThreadAction(
     });
 
     revalidateTag(CACHE_TAGS.threads);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath("/");
+    revalidatePath("/activity");
     revalidatePath("/admin");
     return { ok: true };
   } catch (err) {
@@ -926,9 +1025,12 @@ export async function deleteOwnReplyAction(
       `;
       return {
         threadId: String(row.thread_id),
+        deletedReplyIds: [replyId, ...childRows.map((c) => String(c.id))],
         imageUrls: orphanUrls,
       };
     });
+
+    await deleteActivitiesForReplies(deleted.deletedReplyIds);
 
     after(async () => {
       await Promise.all([
@@ -947,7 +1049,9 @@ export async function deleteOwnReplyAction(
       ]);
     });
     revalidateTag(CACHE_TAGS.threads);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath("/");
+    revalidatePath("/activity");
     return { ok: true };
   } catch (err) {
     return {

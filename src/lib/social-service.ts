@@ -3,6 +3,12 @@ import { CACHE_TAGS, getMemberFollowsCacheTag } from "./cache-tags";
 import { getSql } from "./db";
 import { isDatabaseConfigured } from "./env";
 import { isFeatureEnabled } from "./feature-flags";
+import {
+  computeOnboardingProgress,
+  LAST_ACTIVE_TOUCH_INTERVAL_HOURS,
+  shouldTouchLastActiveAt,
+  type OnboardingProgress,
+} from "./onboarding";
 import type { MemberFollowSummary } from "./types";
 
 export const MAX_FOLLOWING_PER_USER = 200;
@@ -253,4 +259,130 @@ export async function toggleUserFollow(
       followersCount: Number(updatedCountRows[0]?.cnt ?? 0),
     };
   });
+}
+
+async function queryViewerFollowingCountFromDb(viewerId: string): Promise<number> {
+  const sql = getSql();
+  const rows = await sql`
+    SELECT COUNT(*)::int AS cnt
+    FROM public.user_follows
+    WHERE follower_id = ${viewerId}::uuid
+  `;
+  return Number(rows[0]?.cnt ?? 0);
+}
+
+export async function getViewerFollowingCount(
+  viewerId: string | null | undefined
+): Promise<number> {
+  if (!isDatabaseConfigured() || !viewerId || !isValidUuid(viewerId)) {
+    return 0;
+  }
+  const safeId = viewerId.trim();
+  const getCached = unstable_cache(
+    async () => queryViewerFollowingCountFromDb(safeId),
+    ["viewer-following-count", safeId],
+    {
+      revalidate: 60,
+      tags: [CACHE_TAGS.follows, getMemberFollowsCacheTag(safeId)],
+    }
+  );
+  return getCached();
+}
+
+/**
+ * Cập nhật `profiles.last_active_at` tối đa 1 lần / ngày (khi null hoặc cũ hơn 20 giờ).
+ * Điều kiện WHERE trong SQL đảm bảo an toàn khi có nhiều request đồng thời.
+ */
+export async function touchUserLastActiveAt(
+  userId: string,
+  knownLastActiveAt?: string | Date | null
+): Promise<void> {
+  if (!isDatabaseConfigured() || !isValidUuid(userId)) return;
+  if (
+    knownLastActiveAt !== undefined &&
+    !shouldTouchLastActiveAt(knownLastActiveAt)
+  ) {
+    return;
+  }
+  try {
+    const sql = getSql();
+    await sql`
+      UPDATE public.profiles
+      SET last_active_at = NOW()
+      WHERE id = ${userId}::uuid
+        AND (
+          last_active_at IS NULL
+          OR last_active_at < NOW() - make_interval(hours => ${LAST_ACTIVE_TOUCH_INTERVAL_HOURS}::int)
+        )
+    `;
+  } catch (err) {
+    console.warn("[social] Không thể cập nhật last_active_at:", err);
+  }
+}
+
+export async function getUserOnboardingSnapshot(userId: string): Promise<{
+  progress: OnboardingProgress;
+  lastActiveAt: string | null;
+} | null> {
+  if (
+    !isFeatureEnabled("onboarding") ||
+    !isDatabaseConfigured() ||
+    !isValidUuid(userId)
+  ) {
+    return null;
+  }
+
+  const sql = getSql();
+  const rows = await sql`
+    SELECT
+      p.bio,
+      p.nickname,
+      p.onboarding_state,
+      p.last_active_at,
+      CASE
+        WHEN (p.onboarding_state->>'dismissed') = 'true' THEN FALSE
+        ELSE EXISTS (
+          SELECT 1 FROM public.user_follows WHERE follower_id = p.id LIMIT 1
+        )
+      END AS has_follow,
+      CASE
+        WHEN (p.onboarding_state->>'dismissed') = 'true' THEN FALSE
+        ELSE EXISTS (
+          SELECT 1 FROM public.thread_bookmarks WHERE user_id = p.id LIMIT 1
+        )
+      END AS has_bookmark,
+      CASE
+        WHEN (p.onboarding_state->>'dismissed') = 'true' THEN FALSE
+        ELSE EXISTS (
+          SELECT 1 FROM public.threads WHERE author_id = p.id LIMIT 1
+        )
+      END AS has_thread,
+      CASE
+        WHEN (p.onboarding_state->>'dismissed') = 'true' THEN FALSE
+        ELSE EXISTS (
+          SELECT 1 FROM public.replies WHERE author_id = p.id LIMIT 1
+        )
+      END AS has_reply
+    FROM public.profiles p
+    WHERE p.id = ${userId}::uuid
+      AND p.is_banned = FALSE
+    LIMIT 1
+  `;
+
+  if (rows.length === 0) return null;
+  const row = rows[0];
+  const lastActiveAt = row.last_active_at
+    ? new Date(String(row.last_active_at)).toISOString()
+    : null;
+
+  const progress = computeOnboardingProgress(row.onboarding_state, {
+    bio: String(row.bio ?? ""),
+    nickname: String(row.nickname ?? ""),
+    followingCount: row.has_follow ? 1 : 0,
+    bookmarksCount: row.has_bookmark ? 1 : 0,
+    threadsCount: row.has_thread ? 1 : 0,
+    repliesCount: row.has_reply ? 1 : 0,
+  });
+
+  return { progress, lastActiveAt };
 }

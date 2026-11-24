@@ -1,4 +1,5 @@
 import {
+  Activity,
   Award,
   Bookmark,
   BookOpen,
@@ -10,6 +11,7 @@ import {
   Trophy,
   type LucideIcon,
 } from "lucide-react";
+import { FEATURE_FLAGS } from "./feature-flags";
 
 export type NavGroupPriority = "primary" | "secondary" | "supporting";
 
@@ -32,8 +34,13 @@ export const NAV_GROUPS: NavGroupConfig[] = [
     id: "primary",
     priority: "primary",
     label: "Thảo luận Toán",
-    description: "Câu hỏi, lời giải, thử thách và nội dung học thuật",
-    items: [{ href: "/", label: "Diễn đàn", icon: BookOpen }],
+    description: "Câu hỏi, lời giải, thử thách và dòng hoạt động cộng đồng",
+    items: [
+      { href: "/", label: "Diễn đàn", icon: BookOpen },
+      ...(FEATURE_FLAGS.activityFeed
+        ? [{ href: "/activity", label: "Hoạt động", icon: Activity }]
+        : []),
+    ],
   },
   {
     id: "secondary",
@@ -69,6 +76,7 @@ export const SIDEBAR_STORAGE_KEY = "cmc-sidebar-collapsed";
 
 export function getRoutePageTitle(pathname: string): string {
   if (pathname === "/") return "Diễn đàn";
+  if (pathname.startsWith("/activity")) return "Hoạt động cộng đồng";
   if (pathname === "/threads/new") return "Đăng bài viết mới";
   if (pathname.startsWith("/threads/")) return "Thảo luận bài toán";
   if (pathname.startsWith("/collections")) return "Bộ sưu tập Chuyên đề";

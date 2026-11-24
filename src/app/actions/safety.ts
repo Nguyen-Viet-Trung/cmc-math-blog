@@ -158,6 +158,7 @@ export async function toggleUserBlockAction(input: {
       revalidateTag(getMemberFollowsCacheTag(user.id));
     }
     revalidatePath("/");
+    revalidatePath("/activity");
     revalidatePath(`/members/${targetId}`);
     revalidatePath(`/members/${user.id}`);
     return result;

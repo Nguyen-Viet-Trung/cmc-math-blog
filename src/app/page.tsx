@@ -1,6 +1,8 @@
+import { after } from "next/server";
 import { HomeFeedFilters } from "@/app/_components/HomeFeedFilters";
 import { HomeRightRail } from "@/app/_components/HomeRightRail";
 import { HomeThreadList } from "@/app/_components/HomeThreadList";
+import { OnboardingChecklistCard } from "@/components/OnboardingChecklistCard";
 import { listActiveChallenges } from "@/lib/collection-service";
 import {
   getCategories,
@@ -11,8 +13,13 @@ import {
   listThreadsPaginated,
 } from "@/lib/forum-service";
 import { isFeatureEnabled } from "@/lib/feature-flags";
+import { shouldTouchLastActiveAt } from "@/lib/onboarding";
 import { normalizePagination } from "@/lib/pagination";
 import { getViewerBlockedUserIds } from "@/lib/safety-service";
+import {
+  getUserOnboardingSnapshot,
+  touchUserLastActiveAt,
+} from "@/lib/social-service";
 import type { HomeThreadStatusFilter, ThreadType } from "@/lib/types";
 
 export default async function HomePage({
@@ -32,19 +39,18 @@ export default async function HomePage({
   const leaderboardPromise = getLeaderboard(5);
   const rewardsPromise = listActiveRewards();
   const challengesPromise = listActiveChallenges(3);
+  const viewerIdPromise = getCurrentUserId();
 
-  const blockedAuthorIdsPromise = isFeatureEnabled("communitySafety")
-    ? getCurrentUserId().then((viewerId) =>
-        viewerId
-          ? getViewerBlockedUserIds(viewerId).then((set) => Array.from(set))
-          : []
-      )
-    : Promise.resolve<string[]>([]);
+  const onboardingEnabled = isFeatureEnabled("onboarding");
+  const safetyEnabled = isFeatureEnabled("communitySafety");
 
-  const [params, blockedAuthorIds] = await Promise.all([
-    searchParams,
-    blockedAuthorIdsPromise,
-  ]);
+  const [params, viewerId] = await Promise.all([searchParams, viewerIdPromise]);
+
+  const onboardingSnapshotPromise =
+    viewerId && onboardingEnabled
+      ? getUserOnboardingSnapshot(viewerId)
+      : Promise.resolve(null);
+
   const activeCat = params.cat || "";
   const activeType: ThreadType | "all" =
     params.type === "question" ||
@@ -71,23 +77,49 @@ export default async function HomePage({
     activeCat || activeStatus !== "all" || activeType !== "all" || searchQuery
   );
 
-  const [settings, categories, paginated, leaderboard, rewards, challenges] =
-    await Promise.all([
-      settingsPromise,
-      categoriesPromise,
-      listThreadsPaginated({
-        categorySlug: activeCat || undefined,
-        status: activeStatus,
-        threadType: activeType,
-        query: searchQuery || undefined,
-        page: currentPage,
-        pageSize: currentPageSize,
-        excludeAuthorIds: blockedAuthorIds,
-      }),
-      leaderboardPromise,
-      rewardsPromise,
-      challengesPromise,
-    ]);
+  const paginatedPromise = (
+    viewerId && safetyEnabled
+      ? getViewerBlockedUserIds(viewerId).then((set) => Array.from(set))
+      : Promise.resolve<string[]>([])
+  ).then((blockedAuthorIds) =>
+    listThreadsPaginated({
+      categorySlug: activeCat || undefined,
+      status: activeStatus,
+      threadType: activeType,
+      query: searchQuery || undefined,
+      page: currentPage,
+      pageSize: currentPageSize,
+      excludeAuthorIds: blockedAuthorIds,
+    })
+  );
+
+  const [
+    settings,
+    categories,
+    paginated,
+    onboardingSnapshot,
+    leaderboard,
+    rewards,
+    challenges,
+  ] = await Promise.all([
+    settingsPromise,
+    categoriesPromise,
+    paginatedPromise,
+    onboardingSnapshotPromise,
+    leaderboardPromise,
+    rewardsPromise,
+    challengesPromise,
+  ]);
+
+  if (
+    viewerId &&
+    onboardingSnapshot &&
+    shouldTouchLastActiveAt(onboardingSnapshot.lastActiveAt)
+  ) {
+    after(async () => {
+      await touchUserLastActiveAt(viewerId, onboardingSnapshot.lastActiveAt);
+    });
+  }
 
   const activeLeaders = leaderboard.filter(
     (u) => u.totalEarnedPoints > 0 || u.solvedCount > 0
@@ -104,6 +136,12 @@ export default async function HomePage({
 
       <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_280px]">
         <section className="min-w-0 space-y-4">
+          {onboardingSnapshot?.progress.shouldShow && (
+            <OnboardingChecklistCard
+              initialProgress={onboardingSnapshot.progress}
+              categories={categories}
+            />
+          )}
           <HomeFeedFilters
             activeType={activeType}
             activeCat={activeCat}

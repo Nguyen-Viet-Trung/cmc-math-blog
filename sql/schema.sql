@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   solved_count INTEGER NOT NULL DEFAULT 0 CHECK (solved_count >= 0),
   is_banned BOOLEAN NOT NULL DEFAULT FALSE,
   notification_prefs JSONB NOT NULL DEFAULT '{"replies":true,"mentions":true,"follows":true,"campaigns":true,"awards":true,"digest":true}'::jsonb,
+  onboarding_state JSONB NOT NULL DEFAULT '{"favoriteCategories":[],"dismissed":false}'::jsonb,
+  last_active_at TIMESTAMPTZ,
   joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -288,9 +290,26 @@ CREATE TABLE IF NOT EXISTS public.user_blocks (
   CHECK (blocker_id <> blocked_id)
 );
 
+-- 23. Dòng hoạt động cộng đồng (Activity Feed - Sprint 1C)
+CREATE TABLE IF NOT EXISTS public.activities (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  event_type TEXT NOT NULL CHECK (event_type IN ('new_question', 'new_solution', 'accepted_solution', 'badge_earned', 'campaign_launched')),
+  target_type TEXT NOT NULL CHECK (target_type IN ('thread', 'reply', 'campaign', 'award')),
+  target_id UUID NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL DEFAULT '',
+  href TEXT NOT NULL DEFAULT '/',
+  category_slug TEXT,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Nâng cấp idempotent cho các DB đã khởi tạo trước đó
 ALTER TABLE public.profiles
-  ADD COLUMN IF NOT EXISTS notification_prefs JSONB NOT NULL DEFAULT '{"replies":true,"mentions":true,"follows":true,"campaigns":true,"awards":true,"digest":true}'::jsonb;
+  ADD COLUMN IF NOT EXISTS notification_prefs JSONB NOT NULL DEFAULT '{"replies":true,"mentions":true,"follows":true,"campaigns":true,"awards":true,"digest":true}'::jsonb,
+  ADD COLUMN IF NOT EXISTS onboarding_state JSONB NOT NULL DEFAULT '{"favoriteCategories":[],"dismissed":false}'::jsonb,
+  ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMPTZ;
 
 ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS challenge_ends_at TIMESTAMPTZ;
 ALTER TABLE public.threads DROP CONSTRAINT IF EXISTS threads_thread_type_check;
@@ -326,6 +345,7 @@ CREATE INDEX IF NOT EXISTS idx_replies_thread_accepted_created ON public.replies
 CREATE INDEX IF NOT EXISTS idx_point_tx_ref_user_type ON public.point_transactions(reference_id, user_id, type, created_at DESC) WHERE reference_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_redemptions_user_created ON public.redemptions(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON public.notifications(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_notifications_read_created ON public.notifications(is_read, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_cat_created ON public.feedbacks(category, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_created_desc ON public.feedbacks(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_threads_challenge_ends ON public.threads(challenge_ends_at DESC) WHERE thread_type = 'challenge';
@@ -360,9 +380,13 @@ CREATE INDEX IF NOT EXISTS idx_user_follows_following ON public.user_follows(fol
 CREATE INDEX IF NOT EXISTS idx_content_reports_status_created ON public.content_reports(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_content_reports_reporter_created ON public.content_reports(reporter_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_content_reports_resolved_by ON public.content_reports(resolved_by) WHERE resolved_by IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_content_reports_resolved_prune ON public.content_reports((COALESCE(resolved_at, created_at)) ASC) WHERE status IN ('resolved', 'dismissed');
 CREATE UNIQUE INDEX IF NOT EXISTS idx_content_reports_unique_open ON public.content_reports(reporter_id, target_type, target_id) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked ON public.user_blocks(blocked_id);
 CREATE INDEX IF NOT EXISTS idx_replies_author_created ON public.replies(author_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_created_id ON public.activities(created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_actor_created ON public.activities(actor_id, created_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_activities_target ON public.activities(target_type, target_id);
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.
@@ -389,6 +413,7 @@ ALTER TABLE public.user_campaign_awards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_follows ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.content_reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activities ENABLE ROW LEVEL SECURITY;
 
 -- Khởi tạo cấu hình mặc định
 INSERT INTO public.site_settings (id, site_name, default_solved_points)

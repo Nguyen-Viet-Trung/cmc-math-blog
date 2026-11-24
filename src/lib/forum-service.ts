@@ -12,6 +12,7 @@ import {
 } from "./env";
 import { isFeatureEnabled } from "./feature-flags";
 import { normalizeNotificationPrefs } from "./notification-prefs";
+import { normalizeOnboardingState } from "./onboarding";
 import {
   buildPaginatedResult,
   normalizePagination,
@@ -54,6 +55,9 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
   const joinedAt = row.joined_at
     ? new Date(String(row.joined_at)).toISOString()
     : createdAt;
+  const lastActiveAt = row.last_active_at
+    ? new Date(String(row.last_active_at)).toISOString()
+    : null;
   return {
     id: String(row.id),
     email: String(row.email),
@@ -68,6 +72,8 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
     solvedCount: Number(row.solved_count ?? 0),
     isBanned: Boolean(row.is_banned),
     notificationPrefs: normalizeNotificationPrefs(row.notification_prefs),
+    onboardingState: normalizeOnboardingState(row.onboarding_state),
+    lastActiveAt,
     joinedAt,
     createdAt,
   };
@@ -1548,15 +1554,18 @@ export async function acceptReplyTransaction(params: {
   solverId: string;
   solverName: string;
   threadTitle: string;
+  categorySlug: string | null;
   unlockedAwards: UnlockedCampaignAwardSummary[];
 }> {
   const sql = getSql();
 
   return await sql.begin(async (tx) => {
     const threadRows = await tx`
-      SELECT * FROM public.threads
-      WHERE id = ${params.threadId}
-      FOR UPDATE
+      SELECT t.*, c.slug AS category_slug
+      FROM public.threads t
+      LEFT JOIN public.categories c ON c.id = t.category_id
+      WHERE t.id = ${params.threadId}
+      FOR UPDATE OF t
     `;
     if (threadRows.length === 0) {
       throw new Error("Không tìm thấy chủ đề bài toán.");
@@ -1568,7 +1577,7 @@ export async function acceptReplyTransaction(params: {
       FROM public.replies r
       JOIN public.profiles p ON p.id = r.author_id
       WHERE r.id = ${params.replyId} AND r.thread_id = ${params.threadId}
-      FOR UPDATE
+      FOR UPDATE OF r, p
     `;
     if (replyRows.length === 0) {
       throw new Error("Không tìm thấy lời giải này trong chủ đề.");
@@ -1637,6 +1646,7 @@ export async function acceptReplyTransaction(params: {
       solverId: String(reply.author_id),
       solverName: String(reply.solver_name),
       threadTitle: String(thread.title),
+      categorySlug: thread.category_slug ? String(thread.category_slug) : null,
       unlockedAwards,
     };
   });
@@ -1655,15 +1665,18 @@ export async function awardChallengeReplyTransaction(params: {
   solverId: string;
   solverName: string;
   threadTitle: string;
+  categorySlug: string | null;
   unlockedAwards: UnlockedCampaignAwardSummary[];
 }> {
   const sql = getSql();
 
   return await sql.begin(async (tx) => {
     const threadRows = await tx`
-      SELECT * FROM public.threads
-      WHERE id = ${params.threadId}
-      FOR UPDATE
+      SELECT t.*, c.slug AS category_slug
+      FROM public.threads t
+      LEFT JOIN public.categories c ON c.id = t.category_id
+      WHERE t.id = ${params.threadId}
+      FOR UPDATE OF t
     `;
     if (threadRows.length === 0) {
       throw new Error("Không tìm thấy bài Thử thách.");
@@ -1738,6 +1751,7 @@ export async function awardChallengeReplyTransaction(params: {
       solverId: String(reply.author_id),
       solverName: String(reply.solver_name),
       threadTitle: String(thread.title),
+      categorySlug: thread.category_slug ? String(thread.category_slug) : null,
       unlockedAwards,
     };
   });

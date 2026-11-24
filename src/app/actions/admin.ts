@@ -3,6 +3,11 @@
 import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
+import {
+  deleteActivitiesForReplies,
+  deleteActivitiesForThread,
+  recordActivity,
+} from "@/lib/activity-service";
 import { getSql } from "@/lib/db";
 import { FORUM_RULES_SLUG } from "@/lib/default-forum-rules";
 import { isDatabaseConfigured } from "@/lib/env";
@@ -403,8 +408,10 @@ export async function toggleStudentBanAction(input: {
     `;
 
     revalidateTag(CACHE_TAGS.leaderboard);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
+    revalidatePath("/activity");
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi cập nhật trạng thái học sinh." };
@@ -532,8 +539,9 @@ export async function moderateThreadAction(input: {
     if (input.action === "delete") {
       const [tRows, rRows] = await Promise.all([
         sql`SELECT image_urls FROM public.threads WHERE id = ${input.threadId}`,
-        sql`SELECT image_urls FROM public.replies WHERE thread_id = ${input.threadId}`,
+        sql`SELECT id, image_urls FROM public.replies WHERE thread_id = ${input.threadId}`,
       ]);
+      const deletedReplyIds = rRows.map((row) => String(row.id));
       const orphanUrls: string[] = [];
       for (const row of [...tRows, ...rRows]) {
         if (Array.isArray(row.image_urls)) {
@@ -541,6 +549,9 @@ export async function moderateThreadAction(input: {
         }
       }
       await sql`DELETE FROM public.threads WHERE id = ${input.threadId}`;
+      await deleteActivitiesForThread(input.threadId, deletedReplyIds);
+      revalidateTag(CACHE_TAGS.activities);
+      revalidatePath("/activity");
       after(async () => {
         await deleteStorageImagesByUrls(orphanUrls);
       });
@@ -639,6 +650,42 @@ export async function awardChallengeReplyAction(
       replyId,
     });
 
+    await Promise.all([
+      recordActivity({
+        actorId: res.solverId,
+        eventType: "accepted_solution",
+        targetType: "reply",
+        targetId: replyId,
+        title: res.threadTitle,
+        summary: `Bài nộp Thử thách Tuần được chấm đúng (+${res.awardedPoints} điểm).`,
+        href: `/threads/${threadId}`,
+        categorySlug: res.categorySlug,
+        metadata: {
+          threadId,
+          awardedPoints: res.awardedPoints,
+          threadType: "challenge",
+        },
+      }),
+      ...res.unlockedAwards.map((aw) =>
+        recordActivity({
+          actorId: res.solverId,
+          eventType: "badge_earned",
+          targetType: "award",
+          targetId: aw.awardId,
+          title: aw.badgeName,
+          summary: `${aw.awardTitle} — ${aw.campaignTitle}${aw.bonusPoints > 0 ? ` (+${aw.bonusPoints}đ)` : ""}`,
+          href: `/campaigns/${aw.campaignSlug}`,
+          metadata: {
+            campaignId: aw.campaignId,
+            campaignSlug: aw.campaignSlug,
+            campaignTitle: aw.campaignTitle,
+            awardTitle: aw.awardTitle,
+            bonusPoints: aw.bonusPoints,
+          },
+        })
+      ),
+    ]);
+
     after(async () => {
       await Promise.all([
         broadcastThreadEventFromServer({
@@ -668,6 +715,7 @@ export async function awardChallengeReplyAction(
 
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
+    revalidateTag(CACHE_TAGS.activities);
     if (res.unlockedAwards.length > 0) {
       revalidateTag(CACHE_TAGS.campaigns);
       revalidatePath("/campaigns");
@@ -678,6 +726,7 @@ export async function awardChallengeReplyAction(
     }
     revalidatePath(`/threads/${threadId}`);
     revalidatePath("/");
+    revalidatePath("/activity");
     revalidatePath("/leaderboard");
     revalidatePath("/admin");
 
@@ -929,11 +978,17 @@ export async function revokeAcceptedReplyAction(input: {
       };
     });
 
+    await deleteActivitiesForReplies([input.replyId], {
+      eventType: "accepted_solution",
+    });
+
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath(`/threads/${result.threadId}`);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
+    revalidatePath("/activity");
 
     return {
       ok: true,
@@ -1075,10 +1130,13 @@ export async function deleteReplyByAdminAction(input: {
 
       return {
         threadId: String(row.thread_id),
+        deletedIds,
         revokedPoints,
         imageUrls: orphanUrls,
       };
     });
+
+    await deleteActivitiesForReplies(result.deletedIds);
 
     after(async () => {
       await deleteStorageImagesByUrls(result.imageUrls);
@@ -1086,9 +1144,11 @@ export async function deleteReplyByAdminAction(input: {
 
     revalidateTag(CACHE_TAGS.threads);
     revalidateTag(CACHE_TAGS.leaderboard);
+    revalidateTag(CACHE_TAGS.activities);
     revalidatePath(`/threads/${result.threadId}`);
     revalidatePath("/admin");
     revalidatePath("/leaderboard");
+    revalidatePath("/activity");
 
     return {
       ok: true,

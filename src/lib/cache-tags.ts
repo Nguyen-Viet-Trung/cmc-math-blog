@@ -11,6 +11,7 @@ export const CACHE_TAGS = {
   reports: "reports",
   userBlocks: "user-blocks",
   follows: "follows",
+  activities: "activities",
 } as const;
 
 export function getUserBlocksCacheTag(userId: string): string {

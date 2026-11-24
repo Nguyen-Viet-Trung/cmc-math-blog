@@ -2,9 +2,15 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { getMemberFollowsCacheTag } from "@/lib/cache-tags";
+import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
 import { isFeatureEnabled } from "@/lib/feature-flags";
-import { getCurrentUserProfile } from "@/lib/forum-service";
+import { getCategories, getCurrentUserProfile } from "@/lib/forum-service";
+import {
+  normalizeOnboardingState,
+  validateOnboardingStateInput,
+  type OnboardingState,
+} from "@/lib/onboarding";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { isValidUuid, toggleUserFollow } from "@/lib/social-service";
 
@@ -59,6 +65,8 @@ export async function toggleFollowAction(targetUserId: string): Promise<{
     revalidateTag(getMemberFollowsCacheTag(user.id));
     revalidatePath(`/members/${trimmedTargetId}`);
     revalidatePath(`/members/${user.id}`);
+    revalidatePath("/activity");
+    revalidatePath("/");
     return result;
   } catch (err) {
     return {
@@ -67,6 +75,81 @@ export async function toggleFollowAction(targetUserId: string): Promise<{
         err instanceof Error
           ? err.message
           : "Không thể cập nhật trạng thái theo dõi.",
+    };
+  }
+}
+
+export async function updateOnboardingStateAction(input: {
+  favoriteCategories?: string[];
+  dismissed?: boolean;
+}): Promise<{ ok: boolean; state?: OnboardingState; error?: string }> {
+  if (!isFeatureEnabled("onboarding")) {
+    return {
+      ok: false,
+      error: "Tính năng hướng dẫn khởi đầu hiện đang tạm tắt.",
+    };
+  }
+
+  if (!isDatabaseConfigured()) {
+    return {
+      ok: false,
+      error: "Hệ thống đang bảo trì kết nối cơ sở dữ liệu. Vui lòng thử lại sau.",
+    };
+  }
+
+  const user = await getCurrentUserProfile();
+  if (!user) {
+    return {
+      ok: false,
+      error: "Bạn cần đăng nhập để lưu tiến độ khởi đầu.",
+    };
+  }
+  if (user.isBanned) {
+    return { ok: false, error: "Tài khoản của bạn đang tạm khóa." };
+  }
+
+  const burst = checkRateLimit(`onboarding:${user.id}`, {
+    maxRequests: 30,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (!burst.allowed) {
+    return {
+      ok: false,
+      error: `Bạn thao tác quá nhanh. Vui lòng thử lại sau ${burst.retryAfterSeconds} giây.`,
+    };
+  }
+
+  try {
+    const categories = await getCategories();
+    const allowedSlugs = new Set(categories.map((c) => c.slug));
+    const currentState = normalizeOnboardingState(user.onboardingState);
+    const checked = validateOnboardingStateInput(
+      input,
+      currentState,
+      allowedSlugs
+    );
+    if (!checked.ok) {
+      return { ok: false, error: checked.error };
+    }
+
+    const sql = getSql();
+    await sql`
+      UPDATE public.profiles
+      SET
+        onboarding_state = ${JSON.stringify(checked.state)}::jsonb,
+        updated_at = NOW()
+      WHERE id = ${user.id}::uuid
+    `;
+
+    revalidatePath("/");
+    return { ok: true, state: checked.state };
+  } catch (err) {
+    return {
+      ok: false,
+      error:
+        err instanceof Error
+          ? err.message
+          : "Không thể lưu thiết lập khởi đầu.",
     };
   }
 }

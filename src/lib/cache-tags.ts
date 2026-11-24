@@ -8,4 +8,15 @@ export const CACHE_TAGS = {
   collections: "collections",
   forumRules: "forum-rules",
   campaigns: "campaigns",
+  reports: "reports",
+  userBlocks: "user-blocks",
+  follows: "follows",
 } as const;
+
+export function getUserBlocksCacheTag(userId: string): string {
+  return `user-blocks:${userId}`;
+}
+
+export function getMemberFollowsCacheTag(memberId: string): string {
+  return `member-follows:${memberId}`;
+}

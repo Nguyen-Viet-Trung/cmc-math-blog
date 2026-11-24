@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   listAdminFeedbacksPaginated,
   listAdminRedemptionsPaginated,
+  listAdminReportsPaginated,
   listAdminRewardsPaginated,
   listAdminStudentsPaginated,
   listAdminThreadsPaginated,
@@ -67,6 +68,11 @@ export async function GET(request: Request) {
     case "feedbacks":
       return NextResponse.json(
         await listAdminFeedbacksPaginated({ page, pageSize, status, query }),
+        { headers }
+      );
+    case "reports":
+      return NextResponse.json(
+        await listAdminReportsPaginated({ page, pageSize, status, query }),
         { headers }
       );
     case "replies":

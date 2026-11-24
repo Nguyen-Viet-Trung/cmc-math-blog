@@ -8,6 +8,7 @@ import {
   Check,
   CheckCircle2,
   CornerDownRight,
+  Flag,
   Flame,
   Loader2,
   Pencil,
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { formatDateTimeVN } from "@/lib/format";
 import type { ReplyItem, ThreadStatus } from "@/lib/types";
 import { cn } from "@/lib/utils";
@@ -63,6 +65,7 @@ export interface ThreadReplyCardProps {
   onRequestAwardChallenge: (reply: ReplyItem) => void;
   onReplyTo: (reply: ReplyItem) => void;
   onQuote: (reply: ReplyItem) => void;
+  onRequestReport: (reply: ReplyItem) => void;
   onFeedback: (
     feedback: { type: "success" | "error"; text: string } | null
   ) => void;
@@ -90,6 +93,7 @@ export const ThreadReplyCard = memo(function ThreadReplyCard({
   onRequestAwardChallenge,
   onReplyTo,
   onQuote,
+  onRequestReport,
   onFeedback,
 }: ThreadReplyCardProps) {
   const [isEditing, setIsEditing] = useState(false);
@@ -355,6 +359,24 @@ export const ThreadReplyCard = memo(function ThreadReplyCard({
                       </Button>
                     </>
                   )}
+
+                  {FEATURE_FLAGS.communitySafety &&
+                    viewerId &&
+                    !isOwner &&
+                    !isOptimistic && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => onRequestReport(r)}
+                        aria-label={`Báo cáo bình luận của ${r.author.displayName}`}
+                        title="Báo cáo bình luận vi phạm"
+                        className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                      >
+                        <Flag className="h-3.5 w-3.5" aria-hidden="true" />
+                        <span>Báo cáo</span>
+                      </Button>
+                    )}
                 </div>
 
                 {canChooseAccepted && !isSelfReply && !isNested && (

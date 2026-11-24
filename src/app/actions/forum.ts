@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import {
   acceptReplyTransaction,
   getCurrentUserProfile,
@@ -21,6 +22,7 @@ import {
   validateReplyAuthorMutation,
   validateThreadAuthorMutation,
 } from "@/lib/rules";
+import { checkUserRateLimit } from "@/lib/safety-service";
 import {
   deleteStorageImagesByUrls,
   validateOwnedStorageImageUrls,
@@ -104,6 +106,18 @@ export async function createThreadAction(input: {
       return { ok: false, error: deadlineCheck.error };
     }
     challengeEndsAtIso = deadlineCheck.iso;
+  }
+
+  if (isFeatureEnabled("communitySafety") && user.role !== "admin") {
+    const dbRate = await checkUserRateLimit(user.id, "thread");
+    if (!dbRate.allowed) {
+      return {
+        ok: false,
+        error:
+          dbRate.error ||
+          "Bạn đã đạt giới hạn đăng tối đa 5 bài viết mỗi giờ. Vui lòng thử lại sau.",
+      };
+    }
   }
 
   try {
@@ -214,6 +228,18 @@ export async function createReplyAction(input: {
       ok: false,
       error: "Vui lòng nhập lời giải hoặc đính kèm ảnh chụp bài giải.",
     };
+  }
+
+  if (isFeatureEnabled("communitySafety") && user.role !== "admin") {
+    const dbRate = await checkUserRateLimit(user.id, "reply");
+    if (!dbRate.allowed) {
+      return {
+        ok: false,
+        error:
+          dbRate.error ||
+          "Bạn đã đạt giới hạn gửi tối đa 20 bình luận mỗi giờ. Vui lòng thử lại sau.",
+      };
+    }
   }
 
   try {

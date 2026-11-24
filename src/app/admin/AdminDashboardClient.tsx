@@ -59,6 +59,11 @@ const AdminFeedbacksTab = dynamic(
   { loading: () => <AdminTabSkeleton /> }
 );
 
+const AdminReportsTab = dynamic(
+  () => import("./_components/AdminReportsTab").then((m) => m.AdminReportsTab),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
 const AdminSettingsTab = dynamic(
   () =>
     import("./_components/AdminSettingsTab").then((m) => m.AdminSettingsTab),
@@ -305,6 +310,12 @@ export function AdminDashboardClient({
           {tab === "feedbacks" && (
             <AdminFeedbacksTab
               totalFeedbacksCount={counts.feedbacksCount}
+              onNotice={setNotice}
+            />
+          )}
+          {tab === "reports" && (
+            <AdminReportsTab
+              totalReportsCount={counts.reportsCount}
               onNotice={setNotice}
             />
           )}

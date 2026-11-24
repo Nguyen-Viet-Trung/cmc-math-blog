@@ -4,6 +4,7 @@ import {
   Bug,
   CheckCircle2,
   FileText,
+  Flag,
   Gift,
   Layers,
   Medal,
@@ -86,6 +87,18 @@ export function buildAdminNavGroups(
             ? `${detectedSuspiciousCount} nghi vấn`
             : String(counts.repliesCount),
           badgeTone: hasSuspicious ? "destructive" : "default",
+        },
+        {
+          id: "reports",
+          label: "Báo cáo vi phạm",
+          description:
+            "Xem xét, xử lý hoặc bỏ qua các báo cáo bài viết, bình luận và thành viên từ cộng đồng.",
+          icon: Flag,
+          badgeText:
+            counts.openReportsCount > 0
+              ? `${counts.openReportsCount} mở`
+              : String(counts.reportsCount),
+          badgeTone: counts.openReportsCount > 0 ? "destructive" : "default",
         },
       ],
     },

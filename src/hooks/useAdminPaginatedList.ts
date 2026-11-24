@@ -14,7 +14,13 @@ export function useDebouncedValue<T>(value: T, delayMs = 250): T {
 }
 
 export function useAdminPaginatedList<T>(params: {
-  resource: "rewards" | "redemptions" | "students" | "threads" | "feedbacks";
+  resource:
+    | "rewards"
+    | "redemptions"
+    | "students"
+    | "threads"
+    | "feedbacks"
+    | "reports";
   page: number;
   pageSize: number;
   query?: string;

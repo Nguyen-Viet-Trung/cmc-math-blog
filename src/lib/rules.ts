@@ -664,7 +664,7 @@ export function filterVisibleChallengeReplies<
     if (!canSeeOwn(r)) return false;
     if (r.parentReplyId) {
       const parent = byId.get(r.parentReplyId);
-      if (parent && !canSeeOwn(parent)) {
+      if (!parent || !canSeeOwn(parent)) {
         return false;
       }
     }

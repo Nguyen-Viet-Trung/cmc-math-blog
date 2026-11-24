@@ -14,15 +14,23 @@ import {
   CampaignBadgePill,
   UserBadgesCabinet,
 } from "@/components/CampaignBadgePill";
+import { MemberSafetyControls } from "@/components/MemberSafetyControls";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { UrlPaginationBar } from "@/components/UrlPaginationBar";
 import { listUserEarnedBadges } from "@/lib/campaign-service";
+import { isFeatureEnabled } from "@/lib/feature-flags";
 import { formatDateVN, formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
-import { getMemberSeoMeta, getPublicMemberProfile } from "@/lib/forum-service";
+import {
+  getCurrentUserId,
+  getMemberSeoMeta,
+  getPublicMemberProfile,
+} from "@/lib/forum-service";
 import { normalizePagination } from "@/lib/pagination";
+import { getViewerBlockModeForTarget } from "@/lib/safety-service";
+import { getMemberFollowSummary } from "@/lib/social-service";
 
 export async function generateMetadata({
   params,
@@ -50,15 +58,22 @@ export default async function MemberProfilePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ page?: string; pageSize?: string }>;
 }) {
-  const [{ id }, sp] = await Promise.all([params, searchParams]);
+  const [{ id }, sp, viewerId] = await Promise.all([
+    params,
+    searchParams,
+    getCurrentUserId(),
+  ]);
   const { page, pageSize } = normalizePagination(sp.page, sp.pageSize, 10, 50);
-  const [member, badges] = await Promise.all([
+  const [member, badges, followSummary, blockMode] = await Promise.all([
     getPublicMemberProfile(id, page, pageSize),
     listUserEarnedBadges(id),
+    getMemberFollowSummary(id, viewerId),
+    getViewerBlockModeForTarget(viewerId, id),
   ]);
   if (!member) {
     notFound();
   }
+  const canInteractWithMember = Boolean(viewerId && viewerId !== member.id);
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
@@ -116,6 +131,34 @@ export default async function MemberProfilePage({
                 {member.bio}
               </p>
             )}
+
+            {canInteractWithMember ? (
+              <MemberSafetyControls
+                memberId={member.id}
+                memberDisplayName={member.displayName}
+                initialFollowing={followSummary.viewerIsFollowing}
+                initialFollowersCount={followSummary.followersCount}
+                initialFollowingCount={followSummary.followingCount}
+                initialBlockMode={blockMode}
+                canInteract
+              />
+            ) : isFeatureEnabled("followSystem") ? (
+              <div className="pt-1">
+                <p className="text-xs tabular-nums text-muted-foreground">
+                  <strong className="font-semibold text-foreground">
+                    {followSummary.followersCount}
+                  </strong>{" "}
+                  người theo dõi
+                  <span aria-hidden="true" className="mx-1.5">
+                    ·
+                  </span>
+                  Đang theo dõi{" "}
+                  <strong className="font-semibold text-foreground">
+                    {followSummary.followingCount}
+                  </strong>
+                </p>
+              </div>
+            ) : null}
 
             {badges.length > 0 && (
               <div className="flex flex-wrap items-center gap-1.5 pt-1">

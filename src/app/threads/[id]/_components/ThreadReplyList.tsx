@@ -47,6 +47,7 @@ interface ThreadReplyListProps {
   onAwardChallenge: (replyId: string) => Promise<void> | void;
   onReplyTo: (reply: ReplyItem) => void;
   onQuote: (reply: ReplyItem) => void;
+  onRequestReport: (reply: ReplyItem) => void;
   onFeedback: (
     feedback: { type: "success" | "error"; text: string } | null
   ) => void;
@@ -80,6 +81,7 @@ export function ThreadReplyList({
   onAwardChallenge,
   onReplyTo,
   onQuote,
+  onRequestReport,
   onFeedback,
 }: ThreadReplyListProps) {
   const [acceptTarget, setAcceptTarget] = useState<ReplyItem | null>(null);
@@ -243,6 +245,7 @@ export function ThreadReplyList({
                   onRequestAwardChallenge={setChallengeTarget}
                   onReplyTo={onReplyTo}
                   onQuote={onQuote}
+                  onRequestReport={onRequestReport}
                   onFeedback={onFeedback}
                 />
 
@@ -272,6 +275,7 @@ export function ThreadReplyList({
                         onRequestAwardChallenge={setChallengeTarget}
                         onReplyTo={onReplyTo}
                         onQuote={onQuote}
+                        onRequestReport={onRequestReport}
                         onFeedback={onFeedback}
                       />
                     ))}

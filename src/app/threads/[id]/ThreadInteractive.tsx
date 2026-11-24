@@ -9,6 +9,7 @@ import {
   Bookmark,
   CheckCircle2,
   Clock,
+  Flag,
   Flame,
   FlaskConical,
   Gift,
@@ -25,6 +26,7 @@ import { ThreadReplyComposer } from "@/app/threads/[id]/_components/ThreadReplyC
 import { ThreadReplyList } from "@/app/threads/[id]/_components/ThreadReplyList";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { MathContent } from "@/components/MathContent";
+import type { ReportTarget } from "@/components/ReportContentModal";
 import { Alert } from "@/components/ui/alert";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +36,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useRefreshAppSession } from "@/hooks/useAppSession";
 import { useThreadDiscussion } from "@/hooks/useThreadDiscussion";
+import { FEATURE_FLAGS } from "@/lib/feature-flags";
 import { formatDateTimeVN, formatRemainingTime } from "@/lib/format";
 import { isChallengeBlindActive } from "@/lib/rules";
 import type { ReplyItem, ThreadDetail, UserProfile } from "@/lib/types";
@@ -57,6 +60,14 @@ const ThreadEditForm = dynamic(
   }
 );
 
+const ReportContentModal = dynamic(
+  () =>
+    import("@/components/ReportContentModal").then(
+      (m) => m.ReportContentModal
+    ),
+  { ssr: false }
+);
+
 export function ThreadInteractive({
   thread,
   viewer,
@@ -69,6 +80,7 @@ export function ThreadInteractive({
   const [isEditingThread, setIsEditingThread] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingThread, setDeletingThread] = useState(false);
+  const [reportTarget, setReportTarget] = useState<ReportTarget | null>(null);
   const [bookmarked, setBookmarked] = useState(thread.viewerBookmarked);
   const [bookmarkBusy, setBookmarkBusy] = useState(false);
   const [replyTarget, setReplyTarget] = useState<ReplyItem | null>(null);
@@ -326,6 +338,14 @@ export function ThreadInteractive({
     router.refresh();
   }
 
+  const handleRequestReportReply = useCallback((reply: ReplyItem) => {
+    setReportTarget({
+      targetType: "reply",
+      targetId: reply.id,
+      targetTitle: `Bình luận của ${reply.author.displayName}`,
+    });
+  }, []);
+
   const handleRefresh = useCallback(() => {
     void invalidateDiscussion();
   }, [invalidateDiscussion]);
@@ -531,6 +551,26 @@ export function ThreadInteractive({
                       Xóa bài
                     </Button>
                   )}
+                  {FEATURE_FLAGS.communitySafety && viewer && !isThreadOwner && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setReportTarget({
+                          targetType: "thread",
+                          targetId: thread.id,
+                          targetTitle: thread.title,
+                        })
+                      }
+                      aria-label={`Báo cáo bài viết ${thread.title}`}
+                      title="Báo cáo bài viết vi phạm"
+                      className="h-7 px-2 text-xs text-muted-foreground hover:text-destructive"
+                    >
+                      <Flag className="h-3.5 w-3.5" aria-hidden="true" />
+                      <span>Báo cáo</span>
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -602,6 +642,7 @@ export function ThreadInteractive({
         onAwardChallenge={handleAwardChallenge}
         onReplyTo={handleReplyTo}
         onQuote={handleQuote}
+        onRequestReport={handleRequestReportReply}
         onFeedback={setFeedback}
       />
 
@@ -630,6 +671,16 @@ export function ThreadInteractive({
         isLoading={deletingThread}
         onConfirm={handleDeleteOwnThread}
       />
+
+      {reportTarget && (
+        <ReportContentModal
+          open={Boolean(reportTarget)}
+          target={reportTarget}
+          onOpenChange={(nextOpen) => {
+            if (!nextOpen) setReportTarget(null);
+          }}
+        />
+      )}
     </div>
   );
 }

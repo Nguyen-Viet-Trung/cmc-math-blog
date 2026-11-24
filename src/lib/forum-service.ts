@@ -10,6 +10,7 @@ import {
   isDatabaseConfigured,
   isSupabaseAuthConfigured,
 } from "./env";
+import { isFeatureEnabled } from "./feature-flags";
 import { normalizeNotificationPrefs } from "./notification-prefs";
 import {
   buildPaginatedResult,
@@ -271,6 +272,7 @@ export interface ListThreadsFilter {
   status?: HomeThreadStatusFilter;
   threadType?: ThreadType | "all";
   query?: string;
+  excludeAuthorIds?: string[];
 }
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -281,13 +283,16 @@ async function queryThreadsPaginatedFromDb(
   typeFilter: string | null,
   searchPattern: string | null,
   page: number,
-  pageSize: number
+  pageSize: number,
+  excludeAuthorIds: string[] = []
 ): Promise<PaginatedThreadsResult> {
   const safePage = Math.max(1, Math.floor(page));
   const safeSize = Math.min(50, Math.max(1, Math.floor(pageSize)));
   const offset = (safePage - 1) * safeSize;
   const sql = getSql();
   const isUnansweredOnly = statusFilter === "unanswered";
+  const safeExcludeIds = excludeAuthorIds.filter((id) => UUID_REGEX.test(id));
+  const hasExcludedAuthors = safeExcludeIds.length > 0;
 
   const fetchRows = (off: number) =>
     isUnansweredOnly
@@ -332,6 +337,10 @@ async function queryThreadsPaginatedFromDb(
               OR t.title ILIKE ${searchPattern}
               OR t.content ILIKE ${searchPattern}
             )
+            AND (
+              ${hasExcludedAuthors}::boolean = FALSE
+              OR NOT (t.author_id = ANY(${sql.array(safeExcludeIds)}::uuid[]))
+            )
           ORDER BY t.is_pinned DESC, t.created_at DESC
           LIMIT ${safeSize}
           OFFSET ${off}
@@ -375,6 +384,10 @@ async function queryThreadsPaginatedFromDb(
               OR t.title ILIKE ${searchPattern}
               OR t.content ILIKE ${searchPattern}
             )
+            AND (
+              ${hasExcludedAuthors}::boolean = FALSE
+              OR NOT (t.author_id = ANY(${sql.array(safeExcludeIds)}::uuid[]))
+            )
           ORDER BY t.is_pinned DESC, t.created_at DESC
           LIMIT ${safeSize}
           OFFSET ${off}
@@ -401,6 +414,10 @@ async function queryThreadsPaginatedFromDb(
               OR t.title ILIKE ${searchPattern}
               OR t.content ILIKE ${searchPattern}
             )
+            AND (
+              ${hasExcludedAuthors}::boolean = FALSE
+              OR NOT (t.author_id = ANY(${sql.array(safeExcludeIds)}::uuid[]))
+            )
         `
       : await sql`
           SELECT COUNT(*)::int AS total_count
@@ -413,6 +430,10 @@ async function queryThreadsPaginatedFromDb(
               ${searchPattern}::text IS NULL
               OR t.title ILIKE ${searchPattern}
               OR t.content ILIKE ${searchPattern}
+            )
+            AND (
+              ${hasExcludedAuthors}::boolean = FALSE
+              OR NOT (t.author_id = ANY(${sql.array(safeExcludeIds)}::uuid[]))
             )
         `;
     totalCount = Number(countRows[0]?.total_count ?? 0);
@@ -507,7 +528,11 @@ export async function listThreadsPaginated(
   const typeFilter =
     filter.threadType && filter.threadType !== "all" ? filter.threadType : null;
 
-  if (!searchPattern) {
+  const excludeAuthorIds = (filter.excludeAuthorIds ?? [])
+    .filter((id) => UUID_REGEX.test(id))
+    .slice(0, 200);
+
+  if (!searchPattern && excludeAuthorIds.length === 0) {
     return getCachedThreadsPaginated(
       catSlug,
       statusFilter,
@@ -523,7 +548,8 @@ export async function listThreadsPaginated(
     typeFilter,
     searchPattern,
     page,
-    pageSize
+    pageSize,
+    excludeAuthorIds
   );
 }
 
@@ -797,6 +823,8 @@ async function queryThreadDetailFromDb(
   viewerId: string | null
 ): Promise<ThreadDetail | null> {
   const sql = getSql();
+  const blockFilterViewerId =
+    viewerId && isFeatureEnabled("communitySafety") ? viewerId : null;
   const [threadRows, replyRows, collectionRows] = await Promise.all([
     sql`
       SELECT
@@ -833,12 +861,16 @@ async function queryThreadDetailFromDb(
         p.grade_level AS author_grade,
         p.role AS author_role,
         p.solved_count AS author_solved_count,
-        (u.reply_id IS NOT NULL) AS viewer_has_upvoted
+        (u.reply_id IS NOT NULL) AS viewer_has_upvoted,
+        (ub.blocked_id IS NOT NULL) AS is_blocked_by_viewer
       FROM public.replies r
       JOIN public.profiles p ON p.id = r.author_id
       LEFT JOIN public.reply_upvotes u
         ON u.reply_id = r.id
        AND u.user_id = ${viewerId}::uuid
+      LEFT JOIN public.user_blocks ub
+        ON ub.blocker_id = ${blockFilterViewerId}::uuid
+       AND ub.blocked_id = r.author_id
       WHERE r.thread_id = ${threadId}
       ORDER BY r.is_accepted DESC, r.created_at ASC
     `,
@@ -870,39 +902,56 @@ async function queryThreadDetailFromDb(
     challengeEndsAt
   );
 
-  const allReplies: ReplyItem[] = replyRows.map((r) => ({
-    id: String(r.id),
-    threadId: String(r.thread_id),
-    parentReplyId: r.parent_reply_id ? String(r.parent_reply_id) : null,
-    content: String(r.content),
-    imageUrls: Array.isArray(r.image_urls)
-      ? (r.image_urls as string[])
-      : [],
-    isAccepted: Boolean(r.is_accepted),
-    upvotesCount: Number(r.upvotes_count ?? 0),
-    viewerHasUpvoted: Boolean(r.viewer_has_upvoted),
-    createdAt: new Date(String(r.created_at)).toISOString(),
-    updatedAt: r.updated_at
-      ? new Date(String(r.updated_at)).toISOString()
-      : undefined,
-    author: {
-      id: String(r.author_id),
-      displayName: String(r.author_name),
-      nickname: String(r.author_nickname ?? ""),
-      avatarUrl: r.author_avatar ? String(r.author_avatar) : null,
-      gradeLevel: String(r.author_grade ?? "THPT"),
-      role: r.author_role === "admin" ? "admin" : "student",
-      solvedCount: Number(r.author_solved_count ?? 0),
-    },
-  }));
+  const blockedReplyIds = new Set<string>();
+  const allReplies: ReplyItem[] = replyRows.map((r) => {
+    const replyId = String(r.id);
+    if (Boolean(r.is_blocked_by_viewer)) {
+      blockedReplyIds.add(replyId);
+    }
+    return {
+      id: replyId,
+      threadId: String(r.thread_id),
+      parentReplyId: r.parent_reply_id ? String(r.parent_reply_id) : null,
+      content: String(r.content),
+      imageUrls: Array.isArray(r.image_urls)
+        ? (r.image_urls as string[])
+        : [],
+      isAccepted: Boolean(r.is_accepted),
+      upvotesCount: Number(r.upvotes_count ?? 0),
+      viewerHasUpvoted: Boolean(r.viewer_has_upvoted),
+      createdAt: new Date(String(r.created_at)).toISOString(),
+      updatedAt: r.updated_at
+        ? new Date(String(r.updated_at)).toISOString()
+        : undefined,
+      author: {
+        id: String(r.author_id),
+        displayName: String(r.author_name),
+        nickname: String(r.author_nickname ?? ""),
+        avatarUrl: r.author_avatar ? String(r.author_avatar) : null,
+        gradeLevel: String(r.author_grade ?? "THPT"),
+        role: r.author_role === "admin" ? "admin" : "student",
+        solvedCount: Number(r.author_solved_count ?? 0),
+      },
+    };
+  });
 
   const threadAuthorId = String(t.author_id_ref);
-  const replies = filterVisibleChallengeReplies(allReplies, {
+  const visibleChallengeReplies = filterVisibleChallengeReplies(allReplies, {
     isBlindActive: blindActive,
     viewerId: viewerId ?? null,
     viewerRole,
     threadAuthorId,
   });
+  const hiddenRepliesCount = Math.max(
+    0,
+    allReplies.length - visibleChallengeReplies.length
+  );
+  const bypassBlockFilter =
+    viewerRole === "admin" && threadType === "challenge";
+  const replies =
+    bypassBlockFilter || blockedReplyIds.size === 0
+      ? visibleChallengeReplies
+      : visibleChallengeReplies.filter((r) => !blockedReplyIds.has(r.id));
 
   return {
     id: String(t.id),
@@ -919,7 +968,7 @@ async function queryThreadDetailFromDb(
     isPinned: Boolean(t.is_pinned),
     viewCount: Number(t.view_count ?? 0),
     replyCount: Number(t.reply_count ?? 0),
-    hiddenRepliesCount: Math.max(0, allReplies.length - replies.length),
+    hiddenRepliesCount,
     viewerBookmarked: Boolean(t.viewer_bookmarked),
     collections: collectionRows.map((c) => ({
       id: String(c.id),
@@ -985,6 +1034,8 @@ export async function getThreadDiscussionSnapshot(
   }
 
   const sql = getSql();
+  const blockFilterViewerId =
+    viewerId && isFeatureEnabled("communitySafety") ? viewerId : null;
   const [threadRows, replyRows] = await Promise.all([
     sql`
       SELECT
@@ -1013,12 +1064,16 @@ export async function getThreadDiscussionSnapshot(
         p.grade_level AS author_grade,
         p.role AS author_role,
         p.solved_count AS author_solved_count,
-        (u.reply_id IS NOT NULL) AS viewer_has_upvoted
+        (u.reply_id IS NOT NULL) AS viewer_has_upvoted,
+        (ub.blocked_id IS NOT NULL) AS is_blocked_by_viewer
       FROM public.replies r
       JOIN public.profiles p ON p.id = r.author_id
       LEFT JOIN public.reply_upvotes u
         ON u.reply_id = r.id
        AND u.user_id = ${viewerId ?? null}::uuid
+      LEFT JOIN public.user_blocks ub
+        ON ub.blocker_id = ${blockFilterViewerId}::uuid
+       AND ub.blocked_id = r.author_id
       WHERE r.thread_id = ${threadId}
       ORDER BY r.is_accepted DESC, r.created_at ASC
     `,
@@ -1043,37 +1098,54 @@ export async function getThreadDiscussionSnapshot(
     challengeEndsAt
   );
 
-  const allReplies: ReplyItem[] = replyRows.map((r) => ({
-    id: String(r.id),
-    threadId: String(r.thread_id),
-    parentReplyId: r.parent_reply_id ? String(r.parent_reply_id) : null,
-    content: String(r.content),
-    imageUrls: Array.isArray(r.image_urls) ? (r.image_urls as string[]) : [],
-    isAccepted: Boolean(r.is_accepted),
-    upvotesCount: Number(r.upvotes_count ?? 0),
-    viewerHasUpvoted: Boolean(r.viewer_has_upvoted),
-    createdAt: new Date(String(r.created_at)).toISOString(),
-    updatedAt: r.updated_at
-      ? new Date(String(r.updated_at)).toISOString()
-      : undefined,
-    author: {
-      id: String(r.author_id),
-      displayName: String(r.author_name),
-      nickname: String(r.author_nickname ?? ""),
-      avatarUrl: r.author_avatar ? String(r.author_avatar) : null,
-      gradeLevel: String(r.author_grade ?? "THPT"),
-      role: r.author_role === "admin" ? "admin" : "student",
-      solvedCount: Number(r.author_solved_count ?? 0),
-    },
-  }));
+  const blockedReplyIds = new Set<string>();
+  const allReplies: ReplyItem[] = replyRows.map((r) => {
+    const replyId = String(r.id);
+    if (Boolean(r.is_blocked_by_viewer)) {
+      blockedReplyIds.add(replyId);
+    }
+    return {
+      id: replyId,
+      threadId: String(r.thread_id),
+      parentReplyId: r.parent_reply_id ? String(r.parent_reply_id) : null,
+      content: String(r.content),
+      imageUrls: Array.isArray(r.image_urls) ? (r.image_urls as string[]) : [],
+      isAccepted: Boolean(r.is_accepted),
+      upvotesCount: Number(r.upvotes_count ?? 0),
+      viewerHasUpvoted: Boolean(r.viewer_has_upvoted),
+      createdAt: new Date(String(r.created_at)).toISOString(),
+      updatedAt: r.updated_at
+        ? new Date(String(r.updated_at)).toISOString()
+        : undefined,
+      author: {
+        id: String(r.author_id),
+        displayName: String(r.author_name),
+        nickname: String(r.author_nickname ?? ""),
+        avatarUrl: r.author_avatar ? String(r.author_avatar) : null,
+        gradeLevel: String(r.author_grade ?? "THPT"),
+        role: r.author_role === "admin" ? "admin" : "student",
+        solvedCount: Number(r.author_solved_count ?? 0),
+      },
+    };
+  });
 
   const threadAuthorId = String(t.author_id);
-  const replies = filterVisibleChallengeReplies(allReplies, {
+  const visibleChallengeReplies = filterVisibleChallengeReplies(allReplies, {
     isBlindActive: blindActive,
     viewerId: viewerId ?? null,
     viewerRole,
     threadAuthorId,
   });
+  const hiddenRepliesCount = Math.max(
+    0,
+    allReplies.length - visibleChallengeReplies.length
+  );
+  const bypassBlockFilter =
+    viewerRole === "admin" && threadType === "challenge";
+  const replies =
+    bypassBlockFilter || blockedReplyIds.size === 0
+      ? visibleChallengeReplies
+      : visibleChallengeReplies.filter((r) => !blockedReplyIds.has(r.id));
 
   return {
     status,
@@ -1084,7 +1156,7 @@ export async function getThreadDiscussionSnapshot(
     authorRewardPoints: Number(t.author_reward_points ?? 0),
     isPinned: Boolean(t.is_pinned),
     replyCount: Number(t.reply_count ?? allReplies.length),
-    hiddenRepliesCount: Math.max(0, allReplies.length - replies.length),
+    hiddenRepliesCount,
     replies,
   };
 }

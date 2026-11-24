@@ -537,3 +537,42 @@ export interface PublicBadgeCollectionData {
   totalGrantsCount: number;
   totalAwardeesCount: number;
 }
+
+export interface MemberFollowSummary {
+  followersCount: number;
+  followingCount: number;
+  viewerIsFollowing: boolean;
+}
+
+export type ReportTargetType = "thread" | "reply" | "user";
+
+export type ReportReason =
+  | "spam"
+  | "harassment"
+  | "off_topic"
+  | "plagiarism"
+  | "other";
+
+export type ReportStatus = "open" | "resolved" | "dismissed";
+
+export type UserBlockMode = "mute" | "block";
+
+export interface ContentReportItem {
+  id: string;
+  reporterId: string;
+  reporterName: string;
+  reporterEmail: string;
+  targetType: ReportTargetType;
+  targetId: string;
+  targetLabel: string;
+  targetHref: string | null;
+  targetAuthorName: string | null;
+  reason: ReportReason;
+  detail: string;
+  status: ReportStatus;
+  resolvedById: string | null;
+  resolvedByName: string | null;
+  resolutionNote: string;
+  createdAt: string;
+  resolvedAt: string | null;
+}

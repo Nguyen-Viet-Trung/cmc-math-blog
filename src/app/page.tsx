@@ -4,6 +4,7 @@ import { HomeThreadList } from "@/app/_components/HomeThreadList";
 import { listActiveChallenges } from "@/lib/collection-service";
 import {
   getCategories,
+  getCurrentUserId,
   getLeaderboard,
   getSiteSettings,
   listActiveRewards,
@@ -11,6 +12,7 @@ import {
 } from "@/lib/forum-service";
 import { isFeatureEnabled } from "@/lib/feature-flags";
 import { normalizePagination } from "@/lib/pagination";
+import { getViewerBlockedUserIds } from "@/lib/safety-service";
 import type { HomeThreadStatusFilter, ThreadType } from "@/lib/types";
 
 export default async function HomePage({
@@ -25,7 +27,24 @@ export default async function HomePage({
     pageSize?: string;
   }>;
 }) {
-  const params = await searchParams;
+  const settingsPromise = getSiteSettings();
+  const categoriesPromise = getCategories();
+  const leaderboardPromise = getLeaderboard(5);
+  const rewardsPromise = listActiveRewards();
+  const challengesPromise = listActiveChallenges(3);
+
+  const blockedAuthorIdsPromise = isFeatureEnabled("communitySafety")
+    ? getCurrentUserId().then((viewerId) =>
+        viewerId
+          ? getViewerBlockedUserIds(viewerId).then((set) => Array.from(set))
+          : []
+      )
+    : Promise.resolve<string[]>([]);
+
+  const [params, blockedAuthorIds] = await Promise.all([
+    searchParams,
+    blockedAuthorIdsPromise,
+  ]);
   const activeCat = params.cat || "";
   const activeType: ThreadType | "all" =
     params.type === "question" ||
@@ -54,8 +73,8 @@ export default async function HomePage({
 
   const [settings, categories, paginated, leaderboard, rewards, challenges] =
     await Promise.all([
-      getSiteSettings(),
-      getCategories(),
+      settingsPromise,
+      categoriesPromise,
       listThreadsPaginated({
         categorySlug: activeCat || undefined,
         status: activeStatus,
@@ -63,10 +82,11 @@ export default async function HomePage({
         query: searchQuery || undefined,
         page: currentPage,
         pageSize: currentPageSize,
+        excludeAuthorIds: blockedAuthorIds,
       }),
-      getLeaderboard(5),
-      listActiveRewards(),
-      listActiveChallenges(3),
+      leaderboardPromise,
+      rewardsPromise,
+      challengesPromise,
     ]);
 
   const activeLeaders = leaderboard.filter(

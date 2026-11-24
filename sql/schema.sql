@@ -254,6 +254,40 @@ CREATE TABLE IF NOT EXISTS public.user_campaign_awards (
   UNIQUE (award_id, user_id)
 );
 
+-- 20. Hệ thống theo dõi thành viên (Follow System - Sprint 1B)
+CREATE TABLE IF NOT EXISTS public.user_follows (
+  follower_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  following_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (follower_id, following_id),
+  CHECK (follower_id <> following_id)
+);
+
+-- 21. Hệ thống báo cáo nội dung vi phạm (Community Safety v1 - Sprint 1B)
+CREATE TABLE IF NOT EXISTS public.content_reports (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  reporter_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  target_type TEXT NOT NULL CHECK (target_type IN ('thread', 'reply', 'user')),
+  target_id UUID NOT NULL,
+  reason TEXT NOT NULL CHECK (reason IN ('spam', 'harassment', 'off_topic', 'plagiarism', 'other')),
+  detail TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'resolved', 'dismissed')),
+  resolved_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  resolution_note TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ
+);
+
+-- 22. Hệ thống ẩn / chặn người dùng (Community Safety v1 - Sprint 1B)
+CREATE TABLE IF NOT EXISTS public.user_blocks (
+  blocker_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  blocked_id UUID NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  mode TEXT NOT NULL DEFAULT 'mute' CHECK (mode IN ('mute', 'block')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (blocker_id, blocked_id),
+  CHECK (blocker_id <> blocked_id)
+);
+
 -- Nâng cấp idempotent cho các DB đã khởi tạo trước đó
 ALTER TABLE public.profiles
   ADD COLUMN IF NOT EXISTS notification_prefs JSONB NOT NULL DEFAULT '{"replies":true,"mentions":true,"follows":true,"campaigns":true,"awards":true,"digest":true}'::jsonb;
@@ -279,7 +313,6 @@ CREATE INDEX IF NOT EXISTS idx_point_tx_user_created ON public.point_transaction
 CREATE INDEX IF NOT EXISTS idx_redemptions_status_created ON public.redemptions(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_leaderboard ON public.profiles(total_earned_points DESC, solved_count DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_status_created ON public.feedbacks(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_replies_author_id ON public.replies(author_id);
 CREATE INDEX IF NOT EXISTS idx_redemptions_reward_id ON public.redemptions(reward_id);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_user_id ON public.feedbacks(user_id);
 CREATE INDEX IF NOT EXISTS idx_reply_upvotes_user_id ON public.reply_upvotes(user_id);
@@ -323,6 +356,13 @@ CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_user ON public.user_campaign
 CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_campaign ON public.user_campaign_awards(campaign_id, awarded_at DESC);
 CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_reward ON public.user_campaign_awards(reward_id);
 CREATE INDEX IF NOT EXISTS idx_user_campaign_awards_awarded_by ON public.user_campaign_awards(awarded_by);
+CREATE INDEX IF NOT EXISTS idx_user_follows_following ON public.user_follows(following_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_reports_status_created ON public.content_reports(status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_reports_reporter_created ON public.content_reports(reporter_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_content_reports_resolved_by ON public.content_reports(resolved_by) WHERE resolved_by IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_reports_unique_open ON public.content_reports(reporter_id, target_type, target_id) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS idx_user_blocks_blocked ON public.user_blocks(blocked_id);
+CREATE INDEX IF NOT EXISTS idx_replies_author_created ON public.replies(author_id, created_at DESC);
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.
@@ -346,6 +386,9 @@ ALTER TABLE public.campaigns ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.campaign_threads ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.campaign_awards ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.user_campaign_awards ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_follows ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.content_reports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.user_blocks ENABLE ROW LEVEL SECURITY;
 
 -- Khởi tạo cấu hình mặc định
 INSERT INTO public.site_settings (id, site_name, default_solved_points)

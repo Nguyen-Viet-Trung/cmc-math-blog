@@ -6,6 +6,7 @@ export type AdminTabId =
   | "collections"
   | "campaigns"
   | "replies"
+  | "reports"
   | "feedbacks"
   | "rules"
   | "settings";
@@ -18,6 +19,7 @@ const VALID_ADMIN_TABS = new Set<AdminTabId>([
   "collections",
   "campaigns",
   "replies",
+  "reports",
   "feedbacks",
   "rules",
   "settings",

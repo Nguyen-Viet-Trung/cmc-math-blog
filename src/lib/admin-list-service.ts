@@ -10,10 +10,14 @@ import {
 import { normalizeThreadType } from "./rules";
 import type {
   AdminThreadManageItem,
+  ContentReportItem,
   FeedbackCategory,
   FeedbackItem,
   FeedbackStatus,
   RedemptionItem,
+  ReportReason,
+  ReportStatus,
+  ReportTargetType,
   RewardItem,
   ThreadType,
   UserProfile,
@@ -28,6 +32,8 @@ export interface AdminDashboardCounts {
   repliesCount: number;
   feedbacksCount: number;
   openFeedbacksCount: number;
+  reportsCount: number;
+  openReportsCount: number;
   collectionsCount: number;
   campaignsCount: number;
 }
@@ -45,6 +51,8 @@ const getCachedAdminDashboardCounts = unstable_cache(
         (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
         f_stats.feedbacks_count,
         f_stats.open_feedbacks_count,
+        rep_stats.reports_count,
+        rep_stats.open_reports_count,
         (SELECT COUNT(*)::int FROM public.collections) AS collections_count,
         (SELECT COUNT(*)::int FROM public.campaigns) AS campaigns_count
       FROM (
@@ -59,6 +67,12 @@ const getCachedAdminDashboardCounts = unstable_cache(
           COUNT(*) FILTER (WHERE status IN ('open', 'in_progress'))::int AS open_feedbacks_count
         FROM public.feedbacks
       ) f_stats
+      CROSS JOIN (
+        SELECT
+          COUNT(*)::int AS reports_count,
+          COUNT(*) FILTER (WHERE status = 'open')::int AS open_reports_count
+        FROM public.content_reports
+      ) rep_stats
     `;
     const r = rows[0] ?? {};
     return {
@@ -70,6 +84,8 @@ const getCachedAdminDashboardCounts = unstable_cache(
       repliesCount: Number(r.replies_count ?? 0),
       feedbacksCount: Number(r.feedbacks_count ?? 0),
       openFeedbacksCount: Number(r.open_feedbacks_count ?? 0),
+      reportsCount: Number(r.reports_count ?? 0),
+      openReportsCount: Number(r.open_reports_count ?? 0),
       collectionsCount: Number(r.collections_count ?? 0),
       campaignsCount: Number(r.campaigns_count ?? 0),
     };
@@ -81,6 +97,7 @@ const getCachedAdminDashboardCounts = unstable_cache(
       CACHE_TAGS.rewards,
       CACHE_TAGS.threads,
       CACHE_TAGS.feedbacks,
+      CACHE_TAGS.reports,
       CACHE_TAGS.collections,
       CACHE_TAGS.campaigns,
       CACHE_TAGS.leaderboard,
@@ -99,6 +116,8 @@ export async function getAdminDashboardCounts(): Promise<AdminDashboardCounts> {
       repliesCount: 0,
       feedbacksCount: 0,
       openFeedbacksCount: 0,
+      reportsCount: 0,
+      openReportsCount: 0,
       collectionsCount: 0,
       campaignsCount: 0,
     };
@@ -156,6 +175,7 @@ export async function listAdminRewardsPaginated(params: {
 
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
+
 
 export async function listAdminRedemptionsPaginated(params: {
   page?: number;
@@ -253,6 +273,7 @@ export async function listAdminRedemptionsPaginated(params: {
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
+
 export async function listAdminStudentsPaginated(params: {
   page?: number;
   pageSize?: number;
@@ -335,6 +356,7 @@ export async function listAdminStudentsPaginated(params: {
 
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
+
 
 export async function listAdminThreadsPaginated(params: {
   page?: number;
@@ -447,6 +469,7 @@ export async function listAdminThreadsPaginated(params: {
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }
 
+
 export async function listAdminFeedbacksPaginated(params: {
   page?: number;
   pageSize?: number;
@@ -535,6 +558,165 @@ export async function listAdminFeedbacksPaginated(params: {
     adminReply: String(r.admin_reply ?? ""),
     createdAt: new Date(String(r.created_at)).toISOString(),
   }));
+
+  return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
+}
+
+export async function listAdminReportsPaginated(params: {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  query?: string;
+} = {}): Promise<PaginatedResult<ContentReportItem>> {
+  const { page, pageSize, offset } = normalizePagination(
+    params.page,
+    params.pageSize,
+    10
+  );
+  if (!isDatabaseConfigured()) {
+    return buildPaginatedResult([], 0, page, pageSize);
+  }
+
+  const statusFilter =
+    params.status && params.status !== "all" ? params.status : null;
+  const searchPattern = params.query?.trim()
+    ? `%${params.query.trim()}%`
+    : null;
+
+  const sql = getSql();
+  const fetchRows = (off: number) => sql`
+    SELECT
+      cr.*,
+      rep.display_name AS reporter_name,
+      rep.email AS reporter_email,
+      res.display_name AS resolved_by_name,
+      t.title AS target_thread_title,
+      ta.display_name AS target_thread_author_name,
+      r.thread_id AS target_reply_thread_id,
+      LEFT(r.content, 160) AS target_reply_excerpt,
+      ra.display_name AS target_reply_author_name,
+      u.display_name AS target_user_name,
+      COUNT(*) OVER()::int AS total_count
+    FROM public.content_reports cr
+    JOIN public.profiles rep ON rep.id = cr.reporter_id
+    LEFT JOIN public.profiles res ON res.id = cr.resolved_by
+    LEFT JOIN public.threads t
+      ON cr.target_type = 'thread' AND t.id = cr.target_id
+    LEFT JOIN public.profiles ta ON ta.id = t.author_id
+    LEFT JOIN public.replies r
+      ON cr.target_type = 'reply' AND r.id = cr.target_id
+    LEFT JOIN public.profiles ra ON ra.id = r.author_id
+    LEFT JOIN public.profiles u
+      ON cr.target_type = 'user' AND u.id = cr.target_id
+    WHERE (${statusFilter}::text IS NULL OR cr.status = ${statusFilter})
+      AND (
+        ${searchPattern}::text IS NULL
+        OR rep.display_name ILIKE ${searchPattern}
+        OR rep.email ILIKE ${searchPattern}
+        OR cr.detail ILIKE ${searchPattern}
+        OR cr.resolution_note ILIKE ${searchPattern}
+        OR COALESCE(t.title, '') ILIKE ${searchPattern}
+        OR COALESCE(r.content, '') ILIKE ${searchPattern}
+        OR COALESCE(u.display_name, '') ILIKE ${searchPattern}
+      )
+    ORDER BY
+      CASE WHEN cr.status = 'open' THEN 0 ELSE 1 END,
+      cr.created_at DESC
+    LIMIT ${pageSize}
+    OFFSET ${off}
+  `;
+
+  let effectivePage = page;
+  let rows = await fetchRows(offset);
+  let totalCount = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+
+  if (rows.length === 0 && page > 1) {
+    const countRows = await sql`
+      SELECT COUNT(*)::int AS total_count
+      FROM public.content_reports cr
+      JOIN public.profiles rep ON rep.id = cr.reporter_id
+      LEFT JOIN public.threads t
+        ON cr.target_type = 'thread' AND t.id = cr.target_id
+      LEFT JOIN public.replies r
+        ON cr.target_type = 'reply' AND r.id = cr.target_id
+      LEFT JOIN public.profiles u
+        ON cr.target_type = 'user' AND u.id = cr.target_id
+      WHERE (${statusFilter}::text IS NULL OR cr.status = ${statusFilter})
+        AND (
+          ${searchPattern}::text IS NULL
+          OR rep.display_name ILIKE ${searchPattern}
+          OR rep.email ILIKE ${searchPattern}
+          OR cr.detail ILIKE ${searchPattern}
+          OR cr.resolution_note ILIKE ${searchPattern}
+          OR COALESCE(t.title, '') ILIKE ${searchPattern}
+          OR COALESCE(r.content, '') ILIKE ${searchPattern}
+          OR COALESCE(u.display_name, '') ILIKE ${searchPattern}
+        )
+    `;
+    totalCount = Number(countRows[0]?.total_count ?? 0);
+    if (totalCount > 0) {
+      effectivePage = Math.max(1, Math.ceil(totalCount / pageSize));
+      rows = await fetchRows((effectivePage - 1) * pageSize);
+    } else {
+      effectivePage = 1;
+    }
+  }
+
+  const items: ContentReportItem[] = rows.map((row) => {
+    const targetType = String(row.target_type) as ReportTargetType;
+    const targetId = String(row.target_id);
+
+    let targetLabel = "Nội dung đã bị xóa";
+    let targetHref: string | null = null;
+    let targetAuthorName: string | null = null;
+
+    if (targetType === "thread") {
+      if (row.target_thread_title) {
+        targetLabel = String(row.target_thread_title);
+        targetHref = `/threads/${targetId}`;
+      }
+      targetAuthorName = row.target_thread_author_name
+        ? String(row.target_thread_author_name)
+        : null;
+    } else if (targetType === "reply") {
+      if (row.target_reply_excerpt) {
+        targetLabel = String(row.target_reply_excerpt).replace(/\s+/g, " ").trim();
+      }
+      if (row.target_reply_thread_id) {
+        targetHref = `/threads/${String(row.target_reply_thread_id)}`;
+      }
+      targetAuthorName = row.target_reply_author_name
+        ? String(row.target_reply_author_name)
+        : null;
+    } else {
+      if (row.target_user_name) {
+        targetLabel = String(row.target_user_name);
+        targetHref = `/members/${targetId}`;
+      }
+    }
+
+    return {
+      id: String(row.id),
+      reporterId: String(row.reporter_id),
+      reporterName: String(row.reporter_name),
+      reporterEmail: String(row.reporter_email ?? ""),
+      targetType,
+      targetId,
+      targetLabel,
+      targetHref,
+      targetAuthorName,
+      reason: String(row.reason) as ReportReason,
+      detail: String(row.detail ?? ""),
+      status: String(row.status) as ReportStatus,
+      resolvedById: row.resolved_by ? String(row.resolved_by) : null,
+      resolvedByName: row.resolved_by_name ? String(row.resolved_by_name) : null,
+      resolutionNote: String(row.resolution_note ?? ""),
+      createdAt: new Date(String(row.created_at)).toISOString(),
+      resolvedAt: row.resolved_at
+        ? new Date(String(row.resolved_at)).toISOString()
+        : null,
+    };
+  });
 
   return buildPaginatedResult(items, totalCount, effectivePage, pageSize);
 }

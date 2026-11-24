@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2, ChevronLeft, ChevronRight, Trophy } from "lucide-react";
+import { CheckCircle2, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -10,18 +10,10 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
+import { UrlPaginationBar } from "@/components/UrlPaginationBar";
 import { getLeaderboardPaginated } from "@/lib/forum-service";
 import { normalizePagination } from "@/lib/pagination";
 import { cn } from "@/lib/utils";
-
-function buildLeaderboardUrl(page: number, pageSize: number): string {
-  const sp = new URLSearchParams();
-  if (page > 1) sp.set("page", String(page));
-  if (pageSize !== 20) sp.set("pageSize", String(pageSize));
-  const qs = sp.toString();
-  return qs ? `/leaderboard?${qs}` : "/leaderboard";
-}
 
 export default async function LeaderboardPage({
   searchParams,
@@ -164,67 +156,17 @@ export default async function LeaderboardPage({
             </div>
           </Card>
 
-          {paginated.totalCount > 0 && (
-            <nav
-              aria-label="Phân trang Bảng vàng"
-              className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs"
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="tabular-nums text-muted-foreground">
-                  Trang {paginated.page} / {paginated.totalPages} (
-                  {paginated.totalCount} học sinh)
-                </span>
-                <UrlPageSizeSelect
-                  basePath="/leaderboard"
-                  pageSize={paginated.pageSize}
-                  defaultPageSize={20}
-                  options={[10, 20, 30, 50]}
-                  itemLabel="học sinh"
-                />
-              </div>
-              {paginated.totalPages > 1 && (
-                <div className="flex items-center gap-2">
-                  {paginated.page > 1 ? (
-                    <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                      <Link
-                        href={buildLeaderboardUrl(
-                          paginated.page - 1,
-                          paginated.pageSize
-                        )}
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        Trang trước
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                      Trang trước
-                    </Button>
-                  )}
-
-                  {paginated.page < paginated.totalPages ? (
-                    <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                      <Link
-                        href={buildLeaderboardUrl(
-                          paginated.page + 1,
-                          paginated.pageSize
-                        )}
-                      >
-                        Trang sau
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                      Trang sau
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </nav>
-          )}
+          <UrlPaginationBar
+            ariaLabel="Phân trang Bảng vàng"
+            basePath="/leaderboard"
+            page={paginated.page}
+            totalPages={paginated.totalPages}
+            totalCount={paginated.totalCount}
+            pageSize={paginated.pageSize}
+            defaultPageSize={20}
+            pageSizeOptions={[10, 20, 30, 50]}
+            itemLabel="học sinh"
+          />
         </div>
       )}
     </div>

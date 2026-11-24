@@ -1,12 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import {
-  Bookmark,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  MessageSquare,
-} from "lucide-react";
+import { Bookmark, CheckCircle2, MessageSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -17,7 +11,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
+import { UrlPaginationBar } from "@/components/UrlPaginationBar";
 import { listUserBookmarksPaginated } from "@/lib/collection-service";
 import { formatRelativeDate, getThreadTypeLabel } from "@/lib/format";
 import { getCurrentUserId } from "@/lib/forum-service";
@@ -29,14 +23,6 @@ export const metadata: Metadata = {
   description:
     "Danh sách các bài toán, lời giải hay và chuyên đề bạn đã lưu lại để ôn tập.",
 };
-
-function buildBookmarksUrl(page: number, pageSize: number): string {
-  const sp = new URLSearchParams();
-  if (page > 1) sp.set("page", String(page));
-  if (pageSize !== 15) sp.set("pageSize", String(pageSize));
-  const qs = sp.toString();
-  return qs ? `/bookmarks?${qs}` : "/bookmarks";
-}
 
 export default async function BookmarksPage({
   searchParams,
@@ -166,66 +152,17 @@ export default async function BookmarksPage({
             ))}
           </div>
 
-          {paginated.totalCount > 0 && (
-            <nav
-              aria-label="Phân trang sổ tay"
-              className="flex flex-wrap items-center justify-between gap-3 pt-1 text-xs"
-            >
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="tabular-nums text-muted-foreground">
-                  Trang {paginated.page} / {paginated.totalPages} (
-                  {paginated.totalCount} bài)
-                </span>
-                <UrlPageSizeSelect
-                  basePath="/bookmarks"
-                  pageSize={paginated.pageSize}
-                  defaultPageSize={15}
-                  options={[10, 15, 30, 50]}
-                  itemLabel="bài"
-                />
-              </div>
-              {paginated.totalPages > 1 && (
-                <div className="flex items-center gap-2">
-                  {paginated.page > 1 ? (
-                    <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                      <Link
-                        href={buildBookmarksUrl(
-                          paginated.page - 1,
-                          paginated.pageSize
-                        )}
-                      >
-                        <ChevronLeft className="h-3.5 w-3.5" />
-                        Trang trước
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                      <ChevronLeft className="h-3.5 w-3.5" />
-                      Trang trước
-                    </Button>
-                  )}
-                  {paginated.page < paginated.totalPages ? (
-                    <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                      <Link
-                        href={buildBookmarksUrl(
-                          paginated.page + 1,
-                          paginated.pageSize
-                        )}
-                      >
-                        Trang sau
-                        <ChevronRight className="h-3.5 w-3.5" />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                      Trang sau
-                      <ChevronRight className="h-3.5 w-3.5" />
-                    </Button>
-                  )}
-                </div>
-              )}
-            </nav>
-          )}
+          <UrlPaginationBar
+            ariaLabel="Phân trang sổ tay"
+            basePath="/bookmarks"
+            page={paginated.page}
+            totalPages={paginated.totalPages}
+            totalCount={paginated.totalCount}
+            pageSize={paginated.pageSize}
+            defaultPageSize={15}
+            pageSizeOptions={[10, 15, 30, 50]}
+            itemLabel="bài viết"
+          />
         </div>
       )}
     </div>

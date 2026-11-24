@@ -1,8 +1,6 @@
 import Link from "next/link";
 import {
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   CircleDot,
   Clock,
   Flame,
@@ -23,9 +21,8 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { UrlPageSizeSelect } from "@/components/UrlPageSizeSelect";
+import { UrlPaginationBar } from "@/components/UrlPaginationBar";
 import {
-  buildHomeFilterUrl,
   formatRelativeDate,
   formatRemainingTime,
   getThreadTypeLabel,
@@ -248,86 +245,29 @@ export function HomeThreadList({
       </div>
 
       {pagination && pagination.totalCount > 0 && (
-        <nav
-          aria-label="Phân trang bài viết"
-          className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs"
-        >
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="tabular-nums text-muted-foreground">
-              Trang {pagination.page} / {pagination.totalPages} (
-              {pagination.totalCount} bài)
-            </span>
-            <UrlPageSizeSelect
-              basePath="/"
-              pageSize={pagination.pageSize}
-              defaultPageSize={20}
-              options={[10, 20, 30, 50]}
-              itemLabel="bài viết"
-              queryParams={{
-                type:
-                  pagination.activeType !== "all"
-                    ? pagination.activeType
-                    : undefined,
-                cat: pagination.activeCat || undefined,
-                status:
-                  pagination.activeStatus !== "all"
-                    ? pagination.activeStatus
-                    : undefined,
-                q: pagination.searchQuery || undefined,
-              }}
-            />
-          </div>
-
-          {pagination.totalPages > 1 && (
-            <div className="flex items-center gap-2">
-              {pagination.page > 1 ? (
-                <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                  <Link
-                    href={buildHomeFilterUrl({
-                      type: pagination.activeType,
-                      cat: pagination.activeCat,
-                      status: pagination.activeStatus,
-                      q: pagination.searchQuery,
-                      page: pagination.page - 1,
-                      pageSize: pagination.pageSize,
-                    })}
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" />
-                    Trang trước
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                  <ChevronLeft className="h-3.5 w-3.5" />
-                  Trang trước
-                </Button>
-              )}
-
-              {pagination.page < pagination.totalPages ? (
-                <Button asChild variant="outline" size="sm" className="h-8 text-xs">
-                  <Link
-                    href={buildHomeFilterUrl({
-                      type: pagination.activeType,
-                      cat: pagination.activeCat,
-                      status: pagination.activeStatus,
-                      q: pagination.searchQuery,
-                      page: pagination.page + 1,
-                      pageSize: pagination.pageSize,
-                    })}
-                  >
-                    Trang sau
-                    <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                </Button>
-              ) : (
-                <Button variant="outline" size="sm" disabled className="h-8 text-xs">
-                  Trang sau
-                  <ChevronRight className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          )}
-        </nav>
+        <UrlPaginationBar
+          ariaLabel="Phân trang bài viết"
+          basePath="/"
+          page={pagination.page}
+          totalPages={pagination.totalPages}
+          totalCount={pagination.totalCount}
+          pageSize={pagination.pageSize}
+          defaultPageSize={20}
+          pageSizeOptions={[10, 20, 30, 50]}
+          itemLabel="bài viết"
+          queryParams={{
+            type:
+              pagination.activeType !== "all"
+                ? pagination.activeType
+                : undefined,
+            cat: pagination.activeCat || undefined,
+            status:
+              pagination.activeStatus !== "all"
+                ? pagination.activeStatus
+                : undefined,
+            q: pagination.searchQuery || undefined,
+          }}
+        />
       )}
     </div>
   );

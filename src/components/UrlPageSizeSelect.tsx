@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { NativeSelect } from "@/components/ui/native-select";
+import { ChevronsUpDown } from "lucide-react";
 
 interface UrlPageSizeSelectProps {
   basePath: string;
@@ -40,21 +40,28 @@ export function UrlPageSizeSelect({
   }
 
   return (
-    <label className="inline-flex items-center gap-1.5 text-muted-foreground">
-      <span className="hidden sm:inline">Hiển thị</span>
-      <NativeSelect
-        aria-label={`Số ${itemLabel} mỗi trang`}
-        value={pageSize}
-        onChange={(e) => handleChange(Number(e.target.value))}
-        className="h-8 w-auto min-w-[96px] text-xs font-medium tabular-nums"
-      >
-        {resolvedOptions.map((opt) => (
-          <option key={opt} value={opt}>
-            {opt} / trang
-          </option>
-        ))}
-      </NativeSelect>
+    <label className="inline-flex shrink-0 items-center gap-2">
+      <span className="whitespace-nowrap font-medium text-muted-foreground">
+        Số dòng / trang
+      </span>
+      <span className="relative inline-flex items-center">
+        <select
+          aria-label={`Số ${itemLabel} mỗi trang`}
+          value={pageSize}
+          onChange={(e) => handleChange(Number(e.target.value))}
+          className="h-8 w-[68px] cursor-pointer appearance-none rounded-md border border-input bg-background pl-2.5 pr-7 text-xs font-medium tabular-nums text-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        >
+          {resolvedOptions.map((opt) => (
+            <option key={opt} value={opt}>
+              {opt}
+            </option>
+          ))}
+        </select>
+        <ChevronsUpDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-muted-foreground"
+        />
+      </span>
     </label>
   );
 }
-

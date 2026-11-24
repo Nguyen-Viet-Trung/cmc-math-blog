@@ -4,14 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { buildHomeFilterUrl } from "@/lib/format";
 import type { Category, ThreadType } from "@/lib/types";
-import { cn } from "@/lib/utils";
 import { HomeFilterDropdowns } from "./HomeFilterDropdowns";
-
-const STATUS_OPTIONS = [
-  { key: "all", label: "Mọi trạng thái" },
-  { key: "open", label: "Chờ giải" },
-  { key: "solved", label: "Đã giải" },
-] as const;
 
 interface HomeFeedFiltersProps {
   activeType: ThreadType | "all";
@@ -74,52 +67,21 @@ export function HomeFeedFilters({
         </Button>
       </form>
 
-        {/* Một thanh lọc gọn gàng: Dropdown Loại bài + Dropdown Chuyên mục | Trạng thái + Tổng số bài */}
-        <div className="flex flex-wrap items-center justify-between gap-2.5 border-b border-border pb-3">
-          <HomeFilterDropdowns
-            activeType={activeType}
-            activeCat={activeCat}
-            activeStatus={activeStatus}
-            searchQuery={searchQuery}
-            pageSize={pageSize}
-            categories={categories}
-          />
+      {/* Một thanh lọc duy nhất: Loại bài + Chuyên mục + Trạng thái | Tổng số bài */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+        <HomeFilterDropdowns
+          activeType={activeType}
+          activeCat={activeCat}
+          activeStatus={activeStatus}
+          searchQuery={searchQuery}
+          pageSize={pageSize}
+          categories={categories}
+        />
 
-            <div className="flex items-center gap-2.5 text-xs">
-              {(activeType === "all" || activeType === "question") && (
-                <div className="flex items-center gap-1 rounded-md bg-muted/60 p-0.5">
-                  {STATUS_OPTIONS.map((st) => {
-                    const active = activeStatus === st.key;
-                    return (
-                      <Link
-                        key={st.key}
-                        href={buildHomeFilterUrl({
-                          type: activeType,
-                          cat: activeCat,
-                          status: st.key,
-                          q: searchQuery,
-                          pageSize,
-                        })}
-                        prefetch={false}
-                        className={cn(
-                          "rounded px-2 py-0.5 transition-colors",
-                          active
-                            ? "bg-card font-semibold text-foreground"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {st.label}
-                      </Link>
-                    );
-                  })}
-                </div>
-              )}
-
-                <span className="shrink-0 tabular-nums text-muted-foreground">
-                  {threadCount} bài
-                </span>
-            </div>
-          </div>
-        </>
-        );
+        <span className="ml-auto shrink-0 whitespace-nowrap text-xs font-medium tabular-nums text-muted-foreground">
+          {threadCount} bài viết
+        </span>
+      </div>
+    </>
+  );
 }

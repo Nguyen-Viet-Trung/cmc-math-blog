@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Filter, Layers, RotateCcw } from "lucide-react";
+import { CircleDot, Filter, Layers, RotateCcw } from "lucide-react";
 import { NativeSelect } from "@/components/ui/native-select";
 import { buildHomeFilterUrl } from "@/lib/format";
 import type { Category, ThreadType } from "@/lib/types";
@@ -14,6 +14,12 @@ const TYPE_OPTIONS: { key: ThreadType | "all"; label: string }[] = [
   { key: "challenge", label: "Thử thách" },
   { key: "news", label: "News" },
   { key: "research", label: "Research" },
+];
+
+const STATUS_OPTIONS: { key: "all" | "open" | "solved"; label: string }[] = [
+  { key: "all", label: "Mọi trạng thái" },
+  { key: "open", label: "Chờ giải" },
+  { key: "solved", label: "Đã giải" },
 ];
 
 interface HomeFilterDropdownsProps {
@@ -36,7 +42,11 @@ export function HomeFilterDropdowns({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const hasDropdownFilter = activeType !== "all" || Boolean(activeCat);
+  const showStatusDropdown = activeType === "all" || activeType === "question";
+  const hasDropdownFilter =
+    activeType !== "all" ||
+    Boolean(activeCat) ||
+    (showStatusDropdown && activeStatus !== "all");
 
   function navigateWith(next: {
     type?: ThreadType | "all";
@@ -72,7 +82,7 @@ export function HomeFilterDropdowns({
       )}
     >
       {/* Dropdown 1: Phân loại bài viết */}
-      <div className="relative w-full min-w-[148px] sm:w-auto">
+      <div className="relative w-full sm:w-[152px]">
         <Filter
           aria-hidden="true"
           className={cn(
@@ -103,7 +113,7 @@ export function HomeFilterDropdowns({
 
       {/* Dropdown 2: Danh sách chuyên mục Toán */}
       {categories.length > 0 && (
-        <div className="relative w-full min-w-[184px] sm:w-auto sm:max-w-[235px]">
+        <div className="relative w-full sm:w-[205px]">
           <Layers
             aria-hidden="true"
             className={cn(
@@ -132,12 +142,46 @@ export function HomeFilterDropdowns({
         </div>
       )}
 
+      {/* Dropdown 3: Trạng thái bài viết */}
+      {showStatusDropdown && (
+        <div className="relative w-full sm:w-[144px]">
+          <CircleDot
+            aria-hidden="true"
+            className={cn(
+              "pointer-events-none absolute left-2.5 top-1/2 z-10 h-3.5 w-3.5 -translate-y-1/2",
+              activeStatus !== "all" ? "text-primary" : "text-muted-foreground"
+            )}
+          />
+          <NativeSelect
+            aria-label="Lọc theo trạng thái bài viết"
+            value={activeStatus}
+            onChange={(e) =>
+              navigateWith({
+                status: e.target.value as "all" | "open" | "solved",
+              })
+            }
+            className={cn(
+              "h-8 pl-8 pr-7 text-xs",
+              activeStatus !== "all"
+                ? "border-primary/50 bg-primary/5 font-semibold text-foreground"
+                : "text-muted-foreground"
+            )}
+          >
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt.key} value={opt.key}>
+                {opt.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      )}
+
       {hasDropdownFilter && (
         <button
           type="button"
           onClick={() => navigateWith({ type: "all", cat: "", status: "all" })}
-          className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          title="Đặt lại bộ lọc loại bài và chuyên mục"
+          className="inline-flex h-8 shrink-0 items-center gap-1 rounded-md px-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          title="Đặt lại toàn bộ bộ lọc"
         >
           <RotateCcw className="h-3 w-3" />
           <span>Đặt lại</span>

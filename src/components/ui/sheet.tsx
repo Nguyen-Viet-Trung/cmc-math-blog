@@ -27,22 +27,27 @@ SheetOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
-  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
+    side?: "left" | "right";
+  }
+>(({ className, children, side = "left", ...props }, ref) => (
   <SheetPortal>
     <SheetOverlay />
     <DialogPrimitive.Content
       ref={ref}
       className={cn(
-        "fixed inset-y-0 left-0 z-50 flex h-full w-[280px] flex-col border-r border-border bg-card p-5 text-card-foreground shadow-xl transition ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left duration-200",
+        "fixed inset-y-0 z-50 flex h-full flex-col bg-card p-5 text-card-foreground shadow-xl transition duration-200 ease-in-out data-[state=open]:animate-in data-[state=closed]:animate-out",
+        side === "right"
+          ? "right-0 w-full max-w-[440px] border-l border-border data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right"
+          : "left-0 w-[280px] border-r border-border data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
         className
       )}
       {...props}
     >
       {children}
       <DialogPrimitive.Close
-        className="absolute right-3 top-3 rounded-lg p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
-        aria-label="Đóng menu"
+        className="absolute right-3 top-3 rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+        aria-label="Đóng"
       >
         <X className="h-4 w-4" />
       </DialogPrimitive.Close>

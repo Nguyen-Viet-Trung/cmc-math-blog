@@ -3,20 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  CheckCircle2,
-  Clock,
-  Loader2,
-  PackageCheck,
-  XCircle,
-} from "lucide-react";
-import { reviewRedemptionAction } from "@/app/actions/admin";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { CheckCircle2, ClipboardCheck, Clock, Search, XCircle } from "lucide-react";
 import { PaginationBar } from "@/components/PaginationBar";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
@@ -25,6 +18,7 @@ import {
 import { formatDateTimeVN } from "@/lib/format";
 import type { RedemptionItem } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
+import { AdminRedemptionDialog } from "./modals/AdminRedemptionDialog";
 
 type StatusFilter = "all" | RedemptionItem["status"];
 
@@ -33,9 +27,9 @@ const STATUS_META: Record<
   { label: string; variant: BadgeProps["variant"] }
 > = {
   pending: { label: "Chờ duyệt", variant: "bounty" },
-  approved: { label: "Đã duyệt — Chờ trao", variant: "subtle" },
-  fulfilled: { label: "Đã trao quà (Hoàn thành)", variant: "successSolid" },
-  rejected: { label: "Đã từ chối (Hoàn điểm)", variant: "destructive" },
+  approved: { label: "Đã duyệt", variant: "subtle" },
+  fulfilled: { label: "Đã trao quà", variant: "successSolid" },
+  rejected: { label: "Đã từ chối", variant: "destructive" },
 };
 
 export function AdminRedemptionsTab({
@@ -51,9 +45,7 @@ export function AdminRedemptionsTab({
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [adminNotes, setAdminNotes] = useState<Record<string, string>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<RedemptionItem | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<RedemptionItem | null>(null);
 
   const debouncedSearch = useDebouncedValue(search, 250);
   const { data, isLoading, isFetching } = useAdminPaginatedList<RedemptionItem>({
@@ -65,213 +57,141 @@ export function AdminRedemptionsTab({
     onPageClamp: setPage,
   });
 
-  async function handleReview(
-    rd: RedemptionItem,
-    newStatus: "approved" | "fulfilled" | "rejected"
-  ) {
-    setBusyId(rd.id);
-    try {
-      const res = await reviewRedemptionAction({
-        redemptionId: rd.id,
-        newStatus,
-        adminNote: adminNotes[rd.id] ?? rd.adminNote,
-      });
-
-      if (!res.ok) {
-        onNotice({
-          type: "error",
-          text: res.error || "Lỗi cập nhật đơn đổi quà.",
-        });
-        return;
-      }
-      if (newStatus === "rejected") {
-        setRejectTarget(null);
-      }
-      onNotice({
-        type: "success",
-        text:
-          newStatus === "rejected"
-            ? "Đã từ chối đơn và tự động hoàn lại điểm + tồn kho!"
-            : newStatus === "fulfilled"
-              ? `Đã đánh dấu hoàn thành trao "${rd.rewardName}" cho ${rd.userDisplayName}!`
-              : "Đã duyệt đơn đổi quà!",
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-list", "redemptions"],
-      });
-      router.refresh();
-    } catch {
-      onNotice({
-        type: "error",
-        text: "Không thể kết nối máy chủ khi xử lý đơn đổi quà.",
-      });
-    } finally {
-      setBusyId(null);
-    }
+  async function refreshRedemptions() {
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-list", "redemptions"],
+    });
+    router.refresh();
   }
 
   return (
     <div className="space-y-4">
-      <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          type="text"
-          value={search}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Tìm học sinh, tên quà hoặc ghi chú..."
+            className="pl-8 text-xs sm:text-sm"
+          />
+        </div>
+
+        <NativeSelect
+          aria-label="Lọc trạng thái đơn đổi quà"
+          value={statusFilter}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setStatusFilter(e.target.value as StatusFilter);
             setPage(1);
           }}
-          placeholder="Tìm theo tên/email học sinh, tên quà hoặc ghi chú..."
-          className="sm:max-w-sm"
-        />
-
-        <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { id: "all", label: "Tất cả" },
-              { id: "pending", label: "Chờ duyệt" },
-              { id: "approved", label: "Đã duyệt" },
-              { id: "fulfilled", label: "Đã trao" },
-              { id: "rejected", label: "Từ chối" },
-            ] as const
-          ).map((f) => (
-            <Button
-              key={f.id}
-              type="button"
-              size="sm"
-              variant={statusFilter === f.id ? "default" : "outline"}
-              onClick={() => {
-                setStatusFilter(f.id);
-                setPage(1);
-              }}
-              className="h-8 text-xs"
-            >
-              {f.label}
-            </Button>
-          ))}
-        </div>
-      </Card>
+          className="h-9 w-44 text-xs font-medium"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="pending">Chờ duyệt</option>
+          <option value="approved">Đã duyệt</option>
+          <option value="fulfilled">Đã trao quà</option>
+          <option value="rejected">Từ chối</option>
+        </NativeSelect>
+      </div>
 
       {isLoading ? (
         <Card className="space-y-3 p-5">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-16 w-full" />
+          <Skeleton className="h-16 w-full" />
         </Card>
       ) : data.items.length === 0 ? (
-        <Card className="border-dashed p-8 text-center text-sm text-muted-foreground">
+        <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
           {totalRedemptionsCount === 0
             ? "Chưa có đơn yêu cầu đổi quà nào từ học sinh."
             : "Không có đơn đổi quà nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
-        <div className="space-y-3">
-          {data.items.map((rd) => {
-            const meta = STATUS_META[rd.status];
-            const isBusy = busyId === rd.id;
-            const isFinal =
-              rd.status === "rejected" || rd.status === "fulfilled";
+        <>
+          <Card className="overflow-hidden">
+            <div className="divide-y divide-border">
+              {data.items.map((rd) => {
+                const meta = STATUS_META[rd.status];
+                const isFinal =
+                  rd.status === "rejected" || rd.status === "fulfilled";
 
-            return (
-              <Card key={rd.id} className="space-y-3 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      {rd.userDisplayName}{" "}
-                      <span className="font-normal text-muted-foreground">
-                        ({rd.userEmail})
-                      </span>{" "}
-                      đổi{" "}
-                      <strong className="text-primary">{rd.rewardName}</strong>
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Đã trừ:{" "}
-                      <strong className="tabular-nums text-foreground">
-                        {rd.pointsSpent} điểm
-                      </strong>{" "}
-                      · {formatDateTimeVN(rd.createdAt)}
-                    </p>
-                  </div>
-                  <Badge variant={meta.variant}>
-                    {rd.status === "fulfilled" ? (
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                    ) : rd.status === "rejected" ? (
-                      <XCircle className="h-3.5 w-3.5" />
-                    ) : (
-                      <Clock className="h-3 w-3" />
-                    )}
-                    {meta.label}
-                  </Badge>
-                </div>
+                return (
+                  <div
+                    key={rd.id}
+                    className="flex flex-col gap-3 p-4 transition-colors hover:bg-muted/25 sm:flex-row sm:items-start sm:justify-between"
+                  >
+                    <div className="min-w-0 flex-1 space-y-1.5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={meta.variant} className="text-[10px]">
+                          {rd.status === "fulfilled" ? (
+                            <CheckCircle2 className="h-3 w-3" />
+                          ) : rd.status === "rejected" ? (
+                            <XCircle className="h-3 w-3" />
+                          ) : (
+                            <Clock className="h-3 w-3" />
+                          )}
+                          {meta.label}
+                        </Badge>
+                        <p className="text-sm font-semibold text-foreground">
+                          {rd.rewardName}
+                        </p>
+                        <span className="text-xs font-semibold tabular-nums text-bounty">
+                          -{rd.pointsSpent}đ
+                        </span>
+                      </div>
 
-                <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-foreground">
-                  <strong>Ghi chú nhận quà của học sinh:</strong>{" "}
-                  {rd.studentNote}
-                </div>
+                      <p className="text-xs text-muted-foreground">
+                        <strong className="text-foreground">
+                          {rd.userDisplayName}
+                        </strong>{" "}
+                        ({rd.userEmail}) · {formatDateTimeVN(rd.createdAt)}
+                      </p>
 
-                {isFinal && rd.adminNote && (
-                  <div className="rounded-md border border-border bg-card p-3 text-xs text-muted-foreground">
-                    <strong className="text-foreground">
-                      Ghi chú của Admin:
-                    </strong>{" "}
-                    {rd.adminNote}
-                  </div>
-                )}
+                      {rd.studentNote && (
+                        <p className="rounded bg-muted/45 px-2.5 py-1.5 text-xs text-foreground">
+                          <span className="font-medium text-muted-foreground">
+                            Học sinh nhắn:{" "}
+                          </span>
+                          {rd.studentNote}
+                        </p>
+                      )}
 
-                {!isFinal && (
-                  <div className="flex flex-col gap-2 pt-1 sm:flex-row">
-                    <Input
-                      type="text"
-                      value={adminNotes[rd.id] ?? rd.adminNote}
-                      onChange={(e) =>
-                        setAdminNotes({
-                          ...adminNotes,
-                          [rd.id]: e.target.value,
-                        })
-                      }
-                      placeholder="Ghi chú phản hồi cho học sinh (ví dụ: Nhận quà tại phòng Giáo vụ sáng thứ 5)..."
-                      className="flex-1 text-xs"
-                    />
-                    <div className="flex flex-wrap gap-2">
-                      {rd.status === "pending" && (
+                      {rd.adminNote && (
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium text-foreground">
+                            Phản hồi Admin:{" "}
+                          </span>
+                          {rd.adminNote}
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="shrink-0">
+                      {!isFinal ? (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
-                          disabled={isBusy}
-                          onClick={() => void handleReview(rd, "approved")}
+                          onClick={() => setReviewTarget(rd)}
+                          className="h-8 text-xs"
                         >
-                          Duyệt đơn
+                          <ClipboardCheck className="h-3.5 w-3.5 text-primary" />
+                          Xử lý đơn
                         </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">
+                          Đã đóng
+                        </span>
                       )}
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="success"
-                        disabled={isBusy}
-                        onClick={() => void handleReview(rd, "fulfilled")}
-                      >
-                        {isBusy ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <PackageCheck className="h-3.5 w-3.5" />
-                        )}
-                        Đã trao quà
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="destructive"
-                        disabled={isBusy}
-                        onClick={() => setRejectTarget(rd)}
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                        Từ chối &amp; Hoàn điểm
-                      </Button>
                     </div>
                   </div>
-                )}
-              </Card>
-            );
-          })}
+                );
+              })}
+            </div>
+          </Card>
 
           <PaginationBar
             page={data.page}
@@ -287,26 +207,14 @@ export function AdminRedemptionsTab({
               setPage(1);
             }}
           />
-        </div>
+        </>
       )}
-      <ConfirmDialog
-        open={Boolean(rejectTarget)}
-        onOpenChange={(open) => {
-          if (!open) setRejectTarget(null);
-        }}
-        title="Từ chối đơn đổi quà & hoàn điểm?"
-        description={
-          rejectTarget
-            ? `Hệ thống sẽ từ chối đơn "${rejectTarget.rewardName}" của ${rejectTarget.userDisplayName}, tự động hoàn lại ${rejectTarget.pointsSpent} điểm cho học sinh và cộng lại +1 tồn kho.`
-            : ""
-        }
-        confirmLabel="Từ chối & Hoàn điểm"
-        confirmVariant="destructive"
-        isLoading={Boolean(rejectTarget && busyId === rejectTarget.id)}
-        onConfirm={async () => {
-          if (!rejectTarget) return;
-          await handleReview(rejectTarget, "rejected");
-        }}
+
+      <AdminRedemptionDialog
+        redemption={reviewTarget}
+        onClose={() => setReviewTarget(null)}
+        onSuccess={refreshRedemptions}
+        onNotice={onNotice}
       />
     </div>
   );

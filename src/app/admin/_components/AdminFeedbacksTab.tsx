@@ -4,25 +4,25 @@ import { useState } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { Loader2, Trash2 } from "lucide-react";
-import {
-  deleteFeedbackByAdminAction,
-  reviewFeedbackByAdminAction,
-} from "@/app/actions/feedback";
+import { MessageSquareReply, Search, Trash2 } from "lucide-react";
+import { deleteFeedbackByAdminAction } from "@/app/actions/feedback";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaginationBar } from "@/components/PaginationBar";
-import { Badge } from "@/components/ui/badge";
+import { ActionMenu } from "@/components/ui/action-menu";
+import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
   useDebouncedValue,
 } from "@/hooks/useAdminPaginatedList";
 import { formatDateTimeVN } from "@/lib/format";
-import type { FeedbackItem, FeedbackStatus } from "@/lib/types";
+import type { FeedbackCategory, FeedbackItem, FeedbackStatus } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
+import { AdminFeedbackDialog } from "./modals/AdminFeedbackDialog";
 
 const MathContent = dynamic(
   () => import("@/components/MathContent").then((m) => m.MathContent),
@@ -30,6 +30,23 @@ const MathContent = dynamic(
     loading: () => <div className="h-5 w-3/4 animate-pulse rounded bg-muted" />,
   }
 );
+
+const CATEGORY_LABELS: Record<FeedbackCategory, string> = {
+  bug: "Báo lỗi",
+  feature: "Tính năng",
+  ui_ux: "Giao diện",
+  other: "Khác",
+};
+
+const STATUS_META: Record<
+  FeedbackStatus,
+  { label: string; variant: BadgeProps["variant"] }
+> = {
+  open: { label: "Mới mở", variant: "bounty" },
+  in_progress: { label: "Đang xử lý", variant: "subtle" },
+  resolved: { label: "Hoàn thành", variant: "success" },
+  closed: { label: "Đã đóng", variant: "secondary" },
+};
 
 export function AdminFeedbacksTab({
   totalFeedbacksCount,
@@ -46,9 +63,9 @@ export function AdminFeedbacksTab({
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
-  const [replies, setReplies] = useState<Record<string, string>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [reviewTarget, setReviewTarget] = useState<FeedbackItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<FeedbackItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const debouncedSearch = useDebouncedValue(search, 250);
   const { data, isLoading, isFetching } = useAdminPaginatedList<FeedbackItem>({
@@ -60,47 +77,16 @@ export function AdminFeedbacksTab({
     onPageClamp: setPage,
   });
 
-  async function handleReview(
-    feedbackId: string,
-    status: FeedbackStatus,
-    fallbackReply: string
-  ) {
-    if (busyId === feedbackId) return;
-    setBusyId(feedbackId);
-    try {
-      const res = await reviewFeedbackByAdminAction({
-        feedbackId,
-        status,
-        adminReply: replies[feedbackId] ?? fallbackReply,
-      });
-      if (!res.ok) {
-        onNotice({
-          type: "error",
-          text: res.error || "Lỗi cập nhật phản hồi góp ý.",
-        });
-        return;
-      }
-      onNotice({
-        type: "success",
-        text: "Đã lưu phản hồi & trạng thái xử lý góp ý!",
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-list", "feedbacks"],
-      });
-      router.refresh();
-    } catch {
-      onNotice({
-        type: "error",
-        text: "Không thể kết nối máy chủ khi lưu phản hồi.",
-      });
-    } finally {
-      setBusyId(null);
-    }
+  async function refreshFeedbacks() {
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-list", "feedbacks"],
+    });
+    router.refresh();
   }
 
   async function handleConfirmDelete() {
-    if (!deleteTarget || busyId === deleteTarget.id) return;
-    setBusyId(deleteTarget.id);
+    if (!deleteTarget || deleting) return;
+    setDeleting(true);
     try {
       const res = await deleteFeedbackByAdminAction(deleteTarget.id);
       if (!res.ok) {
@@ -108,168 +94,144 @@ export function AdminFeedbacksTab({
         return;
       }
       setDeleteTarget(null);
-      await queryClient.invalidateQueries({
-        queryKey: ["admin-list", "feedbacks"],
-      });
-      router.refresh();
+      onNotice({ type: "success", text: "Đã xóa mục góp ý." });
+      await refreshFeedbacks();
     } catch {
       onNotice({
         type: "error",
         text: "Không thể kết nối máy chủ khi xóa góp ý.",
       });
     } finally {
-      setBusyId(null);
+      setDeleting(false);
     }
   }
 
   return (
     <div className="space-y-4">
-      <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          type="text"
-          value={search}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Tìm theo tiêu đề, mô tả hoặc người gửi..."
+            className="pl-8 text-xs sm:text-sm"
+          />
+        </div>
+
+        <NativeSelect
+          aria-label="Lọc trạng thái góp ý"
+          value={statusFilter}
           onChange={(e) => {
-            setSearch(e.target.value);
+            setStatusFilter(e.target.value as "all" | FeedbackStatus);
             setPage(1);
           }}
-          placeholder="Tìm góp ý theo tiêu đề, mô tả hoặc người gửi..."
-          className="sm:max-w-sm"
-        />
-        <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { id: "all", label: "Tất cả" },
-              { id: "open", label: "Mới mở" },
-              { id: "in_progress", label: "Đang xử lý" },
-              { id: "resolved", label: "Hoàn thành" },
-              { id: "closed", label: "Đã đóng" },
-            ] as const
-          ).map((f) => (
-            <Button
-              key={f.id}
-              type="button"
-              size="sm"
-              variant={statusFilter === f.id ? "default" : "outline"}
-              onClick={() => {
-                setStatusFilter(f.id);
-                setPage(1);
-              }}
-              className="h-8 text-xs"
-            >
-              {f.label}
-            </Button>
-          ))}
-        </div>
-      </Card>
+          className="h-9 w-44 text-xs font-medium"
+        >
+          <option value="all">Tất cả trạng thái</option>
+          <option value="open">Mới mở</option>
+          <option value="in_progress">Đang xử lý</option>
+          <option value="resolved">Hoàn thành</option>
+          <option value="closed">Đã đóng</option>
+        </NativeSelect>
+      </div>
 
       {isLoading ? (
         <Card className="space-y-3 p-5">
-          <Skeleton className="h-24 w-full" />
-          <Skeleton className="h-24 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
         </Card>
       ) : data.items.length === 0 ? (
-        <Card className="border-dashed p-8 text-center text-sm text-muted-foreground">
+        <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
           {totalFeedbacksCount === 0
             ? "Chưa có báo cáo lỗi hay đề xuất tính năng nào từ người dùng."
             : "Không có mục góp ý nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
         <div className="space-y-3">
-          {data.items.map((fb) => (
-            <Card key={fb.id} className="space-y-3 p-5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant="secondary" className="uppercase">
-                      {fb.category}
-                    </Badge>
-                    <strong className="text-sm text-foreground">
-                      {fb.title}
-                    </strong>
+          {data.items.map((fb) => {
+            const meta = STATUS_META[fb.status] ?? STATUS_META.open;
+            return (
+              <Card key={fb.id} className="space-y-3 p-4 sm:p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="secondary" className="text-[10px]">
+                        {CATEGORY_LABELS[fb.category] ?? fb.category}
+                      </Badge>
+                      <Badge variant={meta.variant} className="text-[10px]">
+                        {meta.label}
+                      </Badge>
+                      <strong className="text-sm text-foreground">
+                        {fb.title}
+                      </strong>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      <strong className="text-foreground">
+                        {fb.authorName}
+                      </strong>{" "}
+                      {fb.contactEmail && `(${fb.contactEmail})`} ·{" "}
+                      {formatDateTimeVN(fb.createdAt)}
+                      {fb.pageUrl && ` · ${fb.pageUrl}`}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Người gửi:{" "}
-                    <strong className="text-foreground">{fb.authorName}</strong>{" "}
-                    {fb.contactEmail && `(${fb.contactEmail})`} ·{" "}
-                    {formatDateTimeVN(fb.createdAt)}
-                    {fb.pageUrl && ` · Đường dẫn: ${fb.pageUrl}`}
+
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setReviewTarget(fb)}
+                      className="h-7 px-2.5 text-xs"
+                    >
+                      <MessageSquareReply className="h-3 w-3 text-primary" />
+                      Phản hồi
+                    </Button>
+                    <ActionMenu
+                      triggerLabel={`Thao tác cho góp ý ${fb.title}`}
+                      items={[
+                        {
+                          id: "reply",
+                          label: "Phản hồi & đổi trạng thái",
+                          icon: <MessageSquareReply className="h-3.5 w-3.5" />,
+                          onSelect: () => setReviewTarget(fb),
+                        },
+                        {
+                          id: "delete",
+                          label: "Xóa góp ý",
+                          icon: <Trash2 className="h-3.5 w-3.5" />,
+                          variant: "destructive",
+                          separatorBefore: true,
+                          disabled: deleting,
+                          onSelect: () => setDeleteTarget(fb),
+                        },
+                      ]}
+                    />
+                  </div>
+                </div>
+
+                <div className="rounded-md border border-border bg-muted/35 p-3 text-sm">
+                  <MathContent
+                    content={fb.description}
+                    imageUrls={fb.imageUrls}
+                  />
+                </div>
+
+                {fb.adminReply && (
+                  <p className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs text-foreground">
+                    <span className="font-semibold text-primary">
+                      Phản hồi Admin:{" "}
+                    </span>
+                    {fb.adminReply}
                   </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <Badge variant="subtle">{fb.status}</Badge>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="icon"
-                    disabled={busyId === fb.id}
-                    onClick={() => setDeleteTarget(fb)}
-                    className="h-8 w-8 border-destructive/30 text-destructive hover:bg-destructive/10"
-                    title="Xóa góp ý"
-                    aria-label={`Xóa góp ý ${fb.title}`}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="rounded-md border border-border bg-muted/40 p-3.5 text-sm">
-                <MathContent
-                  content={fb.description}
-                  imageUrls={fb.imageUrls}
-                />
-              </div>
-
-              <div className="flex flex-col gap-2 pt-1 sm:flex-row">
-                <Input
-                  type="text"
-                  value={replies[fb.id] ?? fb.adminReply}
-                  onChange={(e) =>
-                    setReplies({ ...replies, [fb.id]: e.target.value })
-                  }
-                  placeholder="Nhập phản hồi của Admin cho học sinh (hiển thị công khai dưới mục góp ý)..."
-                  className="flex-1 text-xs"
-                />
-                <div className="flex flex-wrap gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={busyId === fb.id}
-                    onClick={() =>
-                      void handleReview(fb.id, "in_progress", fb.adminReply)
-                    }
-                  >
-                    {busyId === fb.id && (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    )}
-                    Đang xử lý
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="success"
-                    disabled={busyId === fb.id}
-                    onClick={() =>
-                      void handleReview(fb.id, "resolved", fb.adminReply)
-                    }
-                  >
-                    Đã hoàn thành
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={busyId === fb.id}
-                    onClick={() =>
-                      void handleReview(fb.id, "closed", fb.adminReply)
-                    }
-                  >
-                    Đóng
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          ))}
+                )}
+              </Card>
+            );
+          })}
 
           <PaginationBar
             page={data.page}
@@ -287,6 +249,14 @@ export function AdminFeedbacksTab({
           />
         </div>
       )}
+
+      <AdminFeedbackDialog
+        feedback={reviewTarget}
+        onClose={() => setReviewTarget(null)}
+        onSuccess={refreshFeedbacks}
+        onNotice={onNotice}
+      />
+
       <ConfirmDialog
         open={Boolean(deleteTarget)}
         onOpenChange={(open) => {
@@ -300,7 +270,7 @@ export function AdminFeedbacksTab({
         }
         confirmLabel="Xóa góp ý"
         confirmVariant="destructive"
-        isLoading={Boolean(deleteTarget && busyId === deleteTarget.id)}
+        isLoading={deleting}
         onConfirm={handleConfirmDelete}
       />
     </div>

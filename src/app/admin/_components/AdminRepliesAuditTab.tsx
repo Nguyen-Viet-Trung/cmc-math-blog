@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, Award } from "lucide-react";
+import { AlertTriangle, Search } from "lucide-react";
 import {
   deleteReplyByAdminAction,
   revokeAcceptedReplyAction,
@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/useAdminPaginatedList";
 import { paginateSlice } from "@/lib/pagination";
@@ -270,47 +271,36 @@ export function AdminRepliesAuditTab({
         </Card>
       )}
 
-      <Card className="space-y-3 p-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <Input
-            type="text"
-            value={search}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Tìm theo tên/email người trả lời, người hỏi, tiêu đề bài hoặc nội dung..."
-            className="sm:max-w-md"
-          />
-          <div className="flex flex-wrap gap-1.5">
-            <Button
-              type="button"
-              size="sm"
-              variant={replyFilter === "all" ? "default" : "outline"}
-              onClick={() => setReplyFilter("all")}
-            >
-              Tất cả ({replies.length})
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={replyFilter === "accepted" ? "success" : "outline"}
-              onClick={() => setReplyFilter("accepted")}
-            >
-              <Award className="h-3.5 w-3.5" />
-              Đã cộng điểm ({acceptedCount})
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant={replyFilter === "suspicious" ? "destructive" : "outline"}
-              onClick={() => setReplyFilter("suspicious")}
-            >
-              <AlertTriangle className="h-3.5 w-3.5" />
-              Nghi vấn ({suspiciousCount})
-            </Button>
+      <div className="space-y-2.5">
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              type="text"
+              value={search}
+              onChange={(e) => onSearchChange(e.target.value)}
+              placeholder="Tìm người trả lời, người hỏi, tiêu đề bài..."
+              className="pl-8 text-xs sm:text-sm"
+            />
           </div>
+          <NativeSelect
+            aria-label="Lọc trạng thái bình luận"
+            value={replyFilter}
+            onChange={(e) =>
+              setReplyFilter(
+                e.target.value as "all" | "accepted" | "suspicious"
+              )
+            }
+            className="h-9 w-52 text-xs font-medium"
+          >
+            <option value="all">Tất cả ({replies.length})</option>
+            <option value="accepted">Đã cộng điểm ({acceptedCount})</option>
+            <option value="suspicious">Nghi vấn buff ({suspiciousCount})</option>
+          </NativeSelect>
         </div>
 
         {(selectedPair || search.trim()) && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-2.5 text-xs">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="text-muted-foreground">Đang lọc:</span>
             {selectedPair && (
               <Badge variant="destructive">Cặp: {selectedPair.label}</Badge>
@@ -335,7 +325,7 @@ export function AdminRepliesAuditTab({
             </Button>
           </div>
         )}
-      </Card>
+      </div>
 
       {filteredReplies.length === 0 ? (
         <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">

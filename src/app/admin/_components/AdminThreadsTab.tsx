@@ -4,16 +4,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
-import { ExternalLink, Gift } from "lucide-react";
-import {
-  awardThreadAuthorAction,
-  moderateThreadAction,
-} from "@/app/actions/admin";
+import { ExternalLink, Gift, Search, Tag } from "lucide-react";
+import { moderateThreadAction } from "@/app/actions/admin";
 import { PaginationBar } from "@/components/PaginationBar";
+import { ActionMenu, type ActionMenuItem } from "@/components/ui/action-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/native-select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   useAdminPaginatedList,
@@ -22,6 +21,14 @@ import {
 import { formatDateTimeVN, getThreadTypeLabel } from "@/lib/format";
 import type { AdminThreadManageItem, ThreadType } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
+import { AdminThreadAwardDialog } from "./modals/AdminThreadAwardDialog";
+
+const THREAD_TYPES: { key: ThreadType; label: string }[] = [
+  { key: "question", label: "Hỏi bài" },
+  { key: "challenge", label: "Thử thách" },
+  { key: "news", label: "News" },
+  { key: "research", label: "Research" },
+];
 
 export function AdminThreadsTab({
   totalThreadsCount,
@@ -38,9 +45,8 @@ export function AdminThreadsTab({
   );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
-  const [rewardInputs, setRewardInputs] = useState<Record<string, string>>({});
-  const [rewardReasons, setRewardReasons] = useState<Record<string, string>>(
-    {}
+  const [awardTarget, setAwardTarget] = useState<AdminThreadManageItem | null>(
+    null
   );
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -62,92 +68,91 @@ export function AdminThreadsTab({
     router.refresh();
   }
 
-  async function handleAward(t: AdminThreadManageItem) {
-    const pts = Number(rewardInputs[t.id] ?? "20");
-    setBusyId(t.id);
-    const res = await awardThreadAuthorAction({
-      threadId: t.id,
-      points: pts,
-      reason: rewardReasons[t.id],
-    });
-    setBusyId(null);
-    if (!res.ok) {
-      onNotice({
-        type: "error",
-        text: res.error || "Không thể cộng điểm thưởng tác giả.",
-      });
-      return;
-    }
-    setRewardReasons({ ...rewardReasons, [t.id]: "" });
-    onNotice({
-      type: "success",
-      text: res.message || "Đã thưởng điểm cho tác giả bài viết!",
-    });
-    await refreshThreads();
-  }
-
   async function handleChangeType(threadId: string, threadType: ThreadType) {
     setBusyId(threadId);
-    const res = await moderateThreadAction({
-      threadId,
-      action: "set_type",
-      threadType,
-    });
-    setBusyId(null);
-    if (!res.ok) {
-      onNotice({
-        type: "error",
-        text: res.error || "Không thể đổi loại bài viết.",
+    try {
+      const res = await moderateThreadAction({
+        threadId,
+        action: "set_type",
+        threadType,
       });
-      return;
+      if (!res.ok) {
+        onNotice({
+          type: "error",
+          text: res.error || "Không thể đổi loại bài viết.",
+        });
+        return;
+      }
+      onNotice({ type: "success", text: "Đã cập nhật loại bài viết!" });
+      await refreshThreads();
+    } finally {
+      setBusyId(null);
     }
-    onNotice({ type: "success", text: "Đã cập nhật loại bài viết!" });
-    await refreshThreads();
+  }
+
+  function buildThreadMenu(t: AdminThreadManageItem): ActionMenuItem[] {
+    return [
+      {
+        id: "open",
+        label: "Mở bài viết ở tab mới",
+        icon: <ExternalLink className="h-3.5 w-3.5" />,
+        onSelect: () => {
+          window.open(`/threads/${t.id}`, "_blank");
+        },
+      },
+      ...THREAD_TYPES.map((opt, idx) => ({
+        id: `type-${opt.key}`,
+        label: `Đổi loại: ${opt.label}`,
+        icon: <Tag className="h-3.5 w-3.5" />,
+        active: t.threadType === opt.key,
+        disabled: busyId === t.id || t.threadType === opt.key,
+        separatorBefore: idx === 0,
+        onSelect: () => void handleChangeType(t.id, opt.key),
+      })),
+    ];
   }
 
   return (
     <div className="space-y-4">
-      <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-        <Input
-          type="text"
-          value={threadSearch}
-          onChange={(e) => {
-            setThreadSearch(e.target.value);
-            setPage(1);
-          }}
-          placeholder="Tìm theo tiêu đề bài, tên hoặc email tác giả..."
-          className="sm:max-w-md"
-        />
-        <div className="flex flex-wrap gap-1.5">
-          {(
-            [
-              { key: "all", label: "Tất cả" },
-              { key: "question", label: "Hỏi bài" },
-              { key: "challenge", label: "Thử thách" },
-              { key: "news", label: "News" },
-              { key: "research", label: "Research" },
-            ] as const
-          ).map((opt) => (
-            <Button
-              key={opt.key}
-              type="button"
-              size="sm"
-              variant={threadTypeFilter === opt.key ? "default" : "outline"}
-              onClick={() => {
-                setThreadTypeFilter(opt.key);
-                setPage(1);
-              }}
-            >
-              {opt.label}
-            </Button>
-          ))}
+      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative w-full sm:max-w-sm">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            type="text"
+            value={threadSearch}
+            onChange={(e) => {
+              setThreadSearch(e.target.value);
+              setPage(1);
+            }}
+            placeholder="Tìm theo tiêu đề bài, tên hoặc email tác giả..."
+            className="pl-8 text-xs sm:text-sm"
+          />
         </div>
-      </Card>
+
+        <div className="flex items-center gap-2">
+          <NativeSelect
+            aria-label="Lọc loại bài viết"
+            value={threadTypeFilter}
+            onChange={(e) => {
+              setThreadTypeFilter(e.target.value as ThreadType | "all");
+              setPage(1);
+            }}
+            className="h-9 w-40 text-xs font-medium"
+          >
+            <option value="all">Tất cả loại bài</option>
+            {THREAD_TYPES.map((opt) => (
+              <option key={opt.key} value={opt.key}>
+                {opt.label}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+      </div>
 
       {isLoading ? (
         <Card className="space-y-3 p-5">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-14 w-full" />
+          <Skeleton className="h-14 w-full" />
         </Card>
       ) : data.items.length === 0 ? (
         <Card className="border-dashed p-10 text-center text-sm text-muted-foreground">
@@ -156,109 +161,96 @@ export function AdminThreadsTab({
             : "Không có bài viết nào khớp với bộ lọc hiện tại."}
         </Card>
       ) : (
-        <div className="space-y-3">
-          {data.items.map((t) => {
-            const isBusy = busyId === t.id;
-            const ptsVal = rewardInputs[t.id] ?? "20";
-            return (
-              <Card key={t.id} className="space-y-3 p-4 sm:p-5">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge
-                        variant={
-                          t.threadType === "question" ? "outline" : "subtle"
-                        }
-                      >
-                        {getThreadTypeLabel(t.threadType)}
-                      </Badge>
-                      <Link
-                        href={`/threads/${t.id}`}
-                        target="_blank"
-                        className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
-                      >
-                        {t.title}
-                        <ExternalLink className="h-3.5 w-3.5 shrink-0" />
-                      </Link>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Tác giả:{" "}
-                      <strong className="text-foreground">
-                        {t.authorName}
-                      </strong>{" "}
-                      ({t.authorEmail}) · {t.categoryName} · {t.gradeTag} ·{" "}
-                      {formatDateTimeVN(t.createdAt)} ·{" "}
-                      {t.replyCount} bình luận · {t.viewCount} lượt xem
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    {t.authorRewardPoints > 0 && (
-                      <Badge variant="bounty">
-                        Đã thưởng tác giả +{t.authorRewardPoints}đ
-                      </Badge>
-                    )}
-                    <select
-                      aria-label="Đổi loại bài viết"
-                      value={t.threadType}
-                      disabled={isBusy}
-                      onChange={(e) =>
-                        void handleChangeType(
-                          t.id,
-                          e.target.value as ThreadType
-                        )
-                      }
-                      className="h-8 rounded-md border border-input bg-card px-2 text-xs text-foreground"
+        <>
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs sm:text-sm">
+                <thead className="border-b border-border bg-muted/40 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  <tr>
+                    <th className="px-4 py-3">Bài viết &amp; Tác giả</th>
+                    <th className="whitespace-nowrap px-3 py-3">Phân loại</th>
+                    <th className="whitespace-nowrap px-3 py-3 text-center">
+                      Tương tác
+                    </th>
+                    <th className="whitespace-nowrap px-3 py-3 text-right">
+                      Thưởng TG
+                    </th>
+                    <th className="w-[136px] whitespace-nowrap px-4 py-3 text-right">
+                      Thao tác
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {data.items.map((t) => (
+                    <tr
+                      key={t.id}
+                      className="transition-colors hover:bg-muted/30"
                     >
-                      <option value="question">Hỏi bài</option>
-                      <option value="challenge">Thử thách</option>
-                      <option value="news">News</option>
-                      <option value="research">Research</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="flex flex-col gap-2 border-t border-border pt-3 sm:flex-row sm:items-center">
-                  <Input
-                    type="number"
-                    min={1}
-                    max={1000}
-                    value={ptsVal}
-                    onChange={(e) =>
-                      setRewardInputs({
-                        ...rewardInputs,
-                        [t.id]: e.target.value,
-                      })
-                    }
-                    className="h-8 w-24 font-semibold tabular-nums text-bounty"
-                    aria-label="Số điểm thưởng"
-                  />
-                  <Input
-                    type="text"
-                    value={rewardReasons[t.id] ?? ""}
-                    onChange={(e) =>
-                      setRewardReasons({
-                        ...rewardReasons,
-                        [t.id]: e.target.value,
-                      })
-                    }
-                    placeholder="Lý do thưởng điểm tác giả (lưu vào sổ cái điểm)..."
-                    className="h-8 flex-1 text-xs"
-                  />
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="bounty"
-                    disabled={isBusy || t.authorBanned}
-                    onClick={() => void handleAward(t)}
-                  >
-                    <Gift className="h-3.5 w-3.5" />
-                    Cộng +{ptsVal || 0}đ tác giả
-                  </Button>
-                </div>
-              </Card>
-            );
-          })}
+                      <td className="max-w-[360px] px-4 py-3">
+                        <Link
+                          href={`/threads/${t.id}`}
+                          prefetch={false}
+                          target="_blank"
+                          className="line-clamp-2 font-semibold leading-snug text-foreground hover:text-primary"
+                        >
+                          {t.title}
+                        </Link>
+                        <p className="mt-1 truncate text-[11px] text-muted-foreground">
+                          <span className="font-medium text-foreground/80">
+                            {t.authorName}
+                          </span>{" "}
+                          · {t.categoryName} · {t.gradeTag} ·{" "}
+                          {formatDateTimeVN(t.createdAt)}
+                        </p>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3">
+                        <Badge
+                          variant={
+                            t.threadType === "question" ? "outline" : "subtle"
+                          }
+                          className="text-[10px]"
+                        >
+                          {getThreadTypeLabel(t.threadType)}
+                        </Badge>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 text-center text-xs tabular-nums text-muted-foreground">
+                        {t.replyCount} BL · {t.viewCount} xem
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-3 text-right text-xs font-semibold tabular-nums">
+                        {t.authorRewardPoints > 0 ? (
+                          <span className="text-bounty">
+                            +{t.authorRewardPoints}đ
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-3 text-right">
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={busyId === t.id || t.authorBanned}
+                            onClick={() => setAwardTarget(t)}
+                            className="h-7 px-2.5 text-xs"
+                          >
+                            <Gift className="h-3 w-3 text-bounty" />
+                            Thưởng
+                          </Button>
+                          <ActionMenu
+                            items={buildThreadMenu(t)}
+                            disabled={busyId === t.id}
+                            triggerLabel={`Thao tác bài ${t.title}`}
+                          />
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
           <PaginationBar
             page={data.page}
@@ -274,8 +266,15 @@ export function AdminThreadsTab({
               setPage(1);
             }}
           />
-        </div>
+        </>
       )}
+
+      <AdminThreadAwardDialog
+        thread={awardTarget}
+        onClose={() => setAwardTarget(null)}
+        onSuccess={refreshThreads}
+        onNotice={onNotice}
+      />
     </div>
   );
 }

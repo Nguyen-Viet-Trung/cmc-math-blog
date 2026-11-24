@@ -22,13 +22,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { useAppSession } from "@/hooks/useAppSession";
+import { useRefreshAppSession } from "@/hooks/useAppSession";
 import { formatDateVN } from "@/lib/format";
 import type { UserProfile } from "@/lib/types";
 
 export function ProfileForm({ user }: { user: UserProfile }) {
   const router = useRouter();
-  const { refreshSession } = useAppSession();
+  const refreshSession = useRefreshAppSession();
   const [displayName, setDisplayName] = useState(user.displayName);
   const [nickname, setNickname] = useState(user.nickname ?? "");
   const [gradeLevel, setGradeLevel] = useState(user.gradeLevel);
@@ -40,27 +40,33 @@ export function ProfileForm({ user }: { user: UserProfile }) {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
     setMessage(null);
     setError(null);
 
-    const res = await updateProfileAction({
-      displayName,
-      nickname,
-      gradeLevel,
-      bio,
-      avatarUrl,
-    });
+    try {
+      const res = await updateProfileAction({
+        displayName,
+        nickname,
+        gradeLevel,
+        bio,
+        avatarUrl,
+      });
 
-    setSaving(false);
-    if (!res.ok) {
-      setError(res.error || "Không thể lưu hồ sơ.");
-      return;
+      if (!res.ok) {
+        setError(res.error || "Không thể lưu hồ sơ.");
+        return;
+      }
+
+      setMessage("Đã lưu cập nhật hồ sơ thành công!");
+      await refreshSession();
+      router.refresh();
+    } catch {
+      setError("Không thể kết nối máy chủ khi lưu hồ sơ.");
+    } finally {
+      setSaving(false);
     }
-
-    setMessage("Đã lưu cập nhật hồ sơ thành công!");
-    await refreshSession();
-    router.refresh();
   }
 
   return (

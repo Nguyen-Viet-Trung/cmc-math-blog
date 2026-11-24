@@ -31,6 +31,7 @@ import type {
   Category,
   PaginatedThreadsResult,
   PointTransactionItem,
+  PublicLeaderboardEntry,
   PublicMemberProfile,
   RedemptionItem,
   ReplyItem,
@@ -66,32 +67,63 @@ function mapProfileRow(row: Record<string, unknown>): UserProfile {
   };
 }
 
+interface VerifiedAuthClaims {
+  userId: string;
+  email: string | null;
+  userMeta: Record<string, unknown>;
+}
+
+/**
+ * Xác thực JWT duy nhất 1 lần mỗi request (bọc trong React `cache()`),
+ * chia sẻ chung cho cả `getCurrentUserId()` và `getCurrentUserProfile()` để tránh verify JWT 2 lần.
+ */
+const getVerifiedAuthClaims = cache(
+  async (): Promise<VerifiedAuthClaims | null> => {
+    if (!isSupabaseAuthConfigured()) {
+      return null;
+    }
+    if (!(await hasSupabaseAuthCookie())) {
+      return null;
+    }
+    const supabase = await createSupabaseServerClient();
+    if (!supabase) return null;
+
+    if (typeof supabase.auth.getClaims === "function") {
+      const { data: claimsData, error: claimsErr } =
+        await supabase.auth.getClaims();
+      if (!claimsErr && claimsData?.claims?.sub) {
+        const claims = claimsData.claims as Record<string, unknown>;
+        return {
+          userId: String(claims.sub),
+          email: typeof claims.email === "string" ? claims.email : null,
+          userMeta:
+            typeof claims.user_metadata === "object" &&
+            claims.user_metadata !== null
+              ? (claims.user_metadata as Record<string, unknown>)
+              : {},
+        };
+      }
+    }
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return null;
+    return {
+      userId: user.id,
+      email: user.email ?? null,
+      userMeta: (user.user_metadata as Record<string, unknown>) ?? {},
+    };
+  }
+);
+
 /**
  * Trích xuất nhanh `userId` từ JWT cookie cục bộ (< 1ms, KHÔNG truy vấn PostgreSQL).
  * Dùng cho các API read-only và để phá waterfall khi gọi song song với `getCurrentUserProfile()`.
  */
 export const getCurrentUserId = cache(async (): Promise<string | null> => {
-  if (!isSupabaseAuthConfigured()) {
-    return null;
-  }
-  if (!(await hasSupabaseAuthCookie())) {
-    return null;
-  }
-  const supabase = await createSupabaseServerClient();
-  if (!supabase) return null;
-
-  if (typeof supabase.auth.getClaims === "function") {
-    const { data: claimsData, error: claimsErr } =
-      await supabase.auth.getClaims();
-    if (!claimsErr && claimsData?.claims?.sub) {
-      return String(claimsData.claims.sub);
-    }
-  }
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  return user?.id ?? null;
+  const claims = await getVerifiedAuthClaims();
+  return claims?.userId ?? null;
 });
 
 /**
@@ -104,35 +136,16 @@ export const getCurrentUserProfile = cache(
       return null;
     }
 
-    // Bỏ qua tức thì (< 0.1ms) nếu trình duyệt chưa có cookie đăng nhập Supabase (`sb-*`)
-    if (!(await hasSupabaseAuthCookie())) {
-      return null;
-    }
+    const claims = await getVerifiedAuthClaims();
+    if (!claims) return null;
 
-    const supabase = await createSupabaseServerClient();
-    if (!supabase) return null;
+    let userId = claims.userId;
+    let userEmail = claims.email;
+    let userMeta = claims.userMeta;
 
-    // Ưu tiên xác thực chữ ký JWT cục bộ bằng JWKS cache (`getClaims` < 1ms) thay vì gọi HTTPS sang Tokyo mỗi lần tải trang
-    let userId: string | null = null;
-    let userEmail: string | null = null;
-    let userMeta: Record<string, unknown> = {};
-
-    if (typeof supabase.auth.getClaims === "function") {
-      const { data: claimsData, error: claimsErr } =
-        await supabase.auth.getClaims();
-      if (!claimsErr && claimsData?.claims?.sub) {
-        const claims = claimsData.claims as Record<string, unknown>;
-        userId = String(claims.sub);
-        userEmail = typeof claims.email === "string" ? claims.email : null;
-        userMeta =
-          typeof claims.user_metadata === "object" &&
-            claims.user_metadata !== null
-            ? (claims.user_metadata as Record<string, unknown>)
-            : {};
-      }
-    }
-
-    if (!userId || !userEmail) {
+    if (!userEmail) {
+      const supabase = await createSupabaseServerClient();
+      if (!supabase) return null;
       const {
         data: { user },
       } = await supabase.auth.getUser();
@@ -445,7 +458,7 @@ export async function listThreadsPaginated(
   );
 }
 
-export const getMemberSeoMeta = cache(
+const getCachedMemberSeoMeta = unstable_cache(
   async (
     memberId: string
   ): Promise<{
@@ -454,9 +467,6 @@ export const getMemberSeoMeta = cache(
     solvedCount: number;
     totalEarnedPoints: number;
   } | null> => {
-    if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
-      return null;
-    }
     const sql = getSql();
     const rows = await sql`
       SELECT display_name, nickname, solved_count, total_earned_points
@@ -472,29 +482,36 @@ export const getMemberSeoMeta = cache(
       solvedCount: Number(p.solved_count ?? 0),
       totalEarnedPoints: Number(p.total_earned_points ?? 0),
     };
-  }
+  },
+  ["forum-member-seo-meta"],
+  { revalidate: 60, tags: [CACHE_TAGS.leaderboard] }
 );
 
-/**
- * Hồ sơ công khai của một thành viên (KHÔNG trả về email hay số dư điểm khả dụng để bảo vệ quyền riêng tư)
- */
-export const getPublicMemberProfile = cache(
+export const getMemberSeoMeta = cache(
   async (
-    memberId: string,
-    pageRaw = 1,
-    pageSizeRaw = 10
-  ): Promise<
-    (PublicMemberProfile & { threadsPage: number; threadsTotalPages: number }) | null
-  > => {
+    memberId: string
+  ): Promise<{
+    displayName: string;
+    nickname: string;
+    solvedCount: number;
+    totalEarnedPoints: number;
+  } | null> => {
     if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
       return null;
     }
+    return getCachedMemberSeoMeta(memberId);
+  }
+);
 
-    const { page, pageSize, offset } = normalizePagination(
-      pageRaw,
-      pageSizeRaw,
-      10
-    );
+const getCachedPublicMemberProfile = unstable_cache(
+  async (
+    memberId: string,
+    page: number,
+    pageSize: number
+  ): Promise<
+    (PublicMemberProfile & { threadsPage: number; threadsTotalPages: number }) | null
+  > => {
+    const offset = (page - 1) * pageSize;
     const sql = getSql();
     const [profileRows, countRows, threadRows] = await Promise.all([
       sql`
@@ -603,6 +620,28 @@ export const getPublicMemberProfile = cache(
         },
       })),
     };
+  },
+  ["forum-public-member-profile"],
+  { revalidate: 60, tags: [CACHE_TAGS.leaderboard, CACHE_TAGS.threads] }
+);
+
+/**
+ * Hồ sơ công khai của một thành viên (KHÔNG trả về email hay số dư điểm khả dụng để bảo vệ quyền riêng tư)
+ */
+export const getPublicMemberProfile = cache(
+  async (
+    memberId: string,
+    pageRaw = 1,
+    pageSizeRaw = 10
+  ): Promise<
+    (PublicMemberProfile & { threadsPage: number; threadsTotalPages: number }) | null
+  > => {
+    if (!isDatabaseConfigured() || !UUID_REGEX.test(memberId)) {
+      return null;
+    }
+
+    const { page, pageSize } = normalizePagination(pageRaw, pageSizeRaw, 10);
+    return getCachedPublicMemberProfile(memberId, page, pageSize);
   }
 );
 
@@ -684,18 +723,10 @@ export async function incrementThreadViewCount(
   return rows.length > 0;
 }
 
-export async function getThreadDetail(
+async function queryThreadDetailFromDb(
   threadId: string,
-  viewerId?: string | null
+  viewerId: string | null
 ): Promise<ThreadDetail | null> {
-  if (!isDatabaseConfigured()) {
-    return null;
-  }
-
-  if (!UUID_REGEX.test(threadId)) {
-    return null;
-  }
-
   const sql = getSql();
   const [threadRows, replyRows, collectionRows] = await Promise.all([
     sql`
@@ -718,9 +749,9 @@ export async function getThreadDetail(
       JOIN public.categories c ON c.id = t.category_id
       LEFT JOIN public.thread_bookmarks tb
         ON tb.thread_id = t.id
-       AND tb.user_id = ${viewerId ?? null}::uuid
+       AND tb.user_id = ${viewerId}::uuid
       LEFT JOIN public.profiles vp
-        ON vp.id = ${viewerId ?? null}::uuid
+        ON vp.id = ${viewerId}::uuid
       WHERE t.id = ${threadId}
       LIMIT 1
     `,
@@ -738,7 +769,7 @@ export async function getThreadDetail(
       JOIN public.profiles p ON p.id = r.author_id
       LEFT JOIN public.reply_upvotes u
         ON u.reply_id = r.id
-       AND u.user_id = ${viewerId ?? null}::uuid
+       AND u.user_id = ${viewerId}::uuid
       WHERE r.thread_id = ${threadId}
       ORDER BY r.is_accepted DESC, r.created_at ASC
     `,
@@ -846,6 +877,26 @@ export async function getThreadDetail(
     },
     replies,
   };
+}
+
+const getCachedPublicThreadDetail = unstable_cache(
+  async (threadId: string): Promise<ThreadDetail | null> =>
+    queryThreadDetailFromDb(threadId, null),
+  ["forum-public-thread-detail"],
+  { revalidate: 20, tags: [CACHE_TAGS.threads] }
+);
+
+export async function getThreadDetail(
+  threadId: string,
+  viewerId?: string | null
+): Promise<ThreadDetail | null> {
+  if (!isDatabaseConfigured() || !UUID_REGEX.test(threadId)) {
+    return null;
+  }
+  if (!viewerId) {
+    return getCachedPublicThreadDetail(threadId);
+  }
+  return queryThreadDetailFromDb(threadId, viewerId);
 }
 
 /**
@@ -969,33 +1020,74 @@ export async function getThreadDiscussionSnapshot(
   };
 }
 
+function mapPublicLeaderboardRow(
+  row: Record<string, unknown>
+): PublicLeaderboardEntry {
+  return {
+    id: String(row.id),
+    displayName: String(row.display_name),
+    nickname: String(row.nickname ?? ""),
+    avatarUrl: row.avatar_url ? String(row.avatar_url) : null,
+    bio: String(row.bio ?? ""),
+    gradeLevel: String(row.grade_level ?? "THPT"),
+    role: row.role === "admin" ? "admin" : "student",
+    totalEarnedPoints: Number(row.total_earned_points ?? 0),
+    solvedCount: Number(row.solved_count ?? 0),
+  };
+}
+
 const getCachedLeaderboard = unstable_cache(
-  async (limit: number): Promise<UserProfile[]> => {
+  async (limit: number): Promise<PublicLeaderboardEntry[]> => {
     const sql = getSql();
     const rows = await sql`
-      SELECT *
+      SELECT
+        id,
+        display_name,
+        nickname,
+        avatar_url,
+        bio,
+        grade_level,
+        role,
+        total_earned_points,
+        solved_count
       FROM public.profiles
       WHERE is_banned = FALSE
+        AND (total_earned_points > 0 OR solved_count > 0)
       ORDER BY total_earned_points DESC, solved_count DESC, created_at ASC
       LIMIT ${limit}
     `;
-    return rows.map(mapProfileRow);
+    return rows.map(mapPublicLeaderboardRow);
   },
-  ["forum-leaderboard"],
+  ["forum-leaderboard-public"],
   { revalidate: 60, tags: [CACHE_TAGS.leaderboard] }
 );
 
-export async function getLeaderboard(limit = 10): Promise<UserProfile[]> {
+export async function getLeaderboard(
+  limit = 10
+): Promise<PublicLeaderboardEntry[]> {
   if (!isDatabaseConfigured()) return [];
   return getCachedLeaderboard(limit);
 }
 
 const getCachedLeaderboardPaginated = unstable_cache(
-  async (page: number, pageSize: number): Promise<PaginatedResult<UserProfile>> => {
+  async (
+    page: number,
+    pageSize: number
+  ): Promise<PaginatedResult<PublicLeaderboardEntry>> => {
     const offset = (page - 1) * pageSize;
     const sql = getSql();
     const fetchRows = (off: number) => sql`
-      SELECT *, COUNT(*) OVER()::int AS total_count
+      SELECT
+        id,
+        display_name,
+        nickname,
+        avatar_url,
+        bio,
+        grade_level,
+        role,
+        total_earned_points,
+        solved_count,
+        COUNT(*) OVER()::int AS total_count
       FROM public.profiles
       WHERE is_banned = FALSE
         AND (total_earned_points > 0 OR solved_count > 0)
@@ -1025,20 +1117,20 @@ const getCachedLeaderboardPaginated = unstable_cache(
     }
 
     return buildPaginatedResult(
-      rows.map(mapProfileRow),
+      rows.map(mapPublicLeaderboardRow),
       totalCount,
       effectivePage,
       pageSize
     );
   },
-  ["forum-leaderboard-paginated"],
+  ["forum-leaderboard-paginated-public"],
   { revalidate: 60, tags: [CACHE_TAGS.leaderboard] }
 );
 
 export async function getLeaderboardPaginated(
   pageRaw = 1,
   pageSizeRaw = 20
-): Promise<PaginatedResult<UserProfile>> {
+): Promise<PaginatedResult<PublicLeaderboardEntry>> {
   const { page, pageSize } = normalizePagination(pageRaw, pageSizeRaw, 20);
   if (!isDatabaseConfigured()) {
     return buildPaginatedResult([], 0, page, pageSize);

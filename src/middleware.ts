@@ -51,29 +51,16 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Đọc thời hạn phiên từ cookie tại chỗ (~0.1ms):
-  // Chỉ gọi mạng sang Supabase Auth để xoay vòng refresh_token khi access_token còn dưới 5 phút là hết hạn.
-  // Điều này giúp 99% lượt bấm chuyển trang không bị chặn bởi cuộc gọi HTTPS 300ms sang máy chủ nước ngoài!
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    return supabaseResponse;
-  }
-
-  const nowSec = Math.floor(Date.now() / 1000);
-  const secondsLeft = (session.expires_at ?? 0) - nowSec;
-
-  if (secondsLeft <= 300) {
-    await supabase.auth.getUser();
-  }
+  // Đọc và tự động làm mới phiên từ cookie cục bộ:
+  // `getSession()` đã tích hợp cơ chế tự xoay vòng refresh_token trong ngưỡng 90 giây trước khi hết hạn;
+  // tránh gọi thêm `getUser()` trên mọi request trong cửa sổ 300s (vốn không làm mới token mà gây chậm +250ms/request).
+  await supabase.auth.getSession();
 
   return supabaseResponse;
 }
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|robots\\.txt|sitemap\\.xml|api/cron/|api/feedbacks|api/threads/[^/]+/view|.*\\.(?:svg|png|jpg|jpeg|gif|webp|woff2?|ico)$).*)",
   ],
 };

@@ -1,6 +1,8 @@
 import { listPublicFeedbacksPaginatedCached } from "@/lib/feedback-service";
 import { FeedbackClient } from "./FeedbackClient";
 
+export const revalidate = 60;
+
 export const metadata = {
   title: "Góp ý & Báo lỗi (Beta)",
   description:

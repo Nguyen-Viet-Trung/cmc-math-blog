@@ -66,6 +66,7 @@ model profiles {
   threads                                                    threads[]
   thread_bookmarks                                           thread_bookmarks[]
   collections                                                collections[]
+  site_documents                                             site_documents[]
 
   @@index([total_earned_points(sort: Desc), solved_count(sort: Desc)], map: "idx_profiles_leaderboard")
 }
@@ -268,4 +269,16 @@ model collection_threads {
   @@id([collection_id, thread_id])
   @@index([collection_id, sort_order, added_at], map: "idx_collection_threads_col_order")
   @@index([thread_id], map: "idx_collection_threads_thread_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations.
+model site_documents {
+  slug       String    @id
+  title      String
+  content    String    @default("")
+  updated_by String?   @db.Uuid
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  profiles   profiles? @relation(fields: [updated_by], references: [id], onDelete: SetNull, onUpdate: NoAction)
+
+  @@index([updated_by], map: "idx_site_documents_updated_by")
 }

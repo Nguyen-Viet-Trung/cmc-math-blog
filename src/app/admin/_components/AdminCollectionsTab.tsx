@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ExternalLink,
   Layers,
@@ -45,10 +46,7 @@ export function AdminCollectionsTab({
   onConsumedAutoOpen?: () => void;
 }) {
   const router = useRouter();
-  const [collections, setCollections] = useState<AdminCollectionWithThreads[]>(
-    []
-  );
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editingCollection, setEditingCollection] =
@@ -64,31 +62,33 @@ export function AdminCollectionsTab({
     onConsumedAutoOpen?.();
   }, [autoOpenCreate, onConsumedAutoOpen]);
 
-  const fetchCollections = useCallback(async () => {
-    setLoading(true);
-    try {
+  const collectionsQuery = useQuery<AdminCollectionWithThreads[]>({
+    queryKey: ["admin-list", "collections"],
+    staleTime: 20_000,
+    queryFn: async () => {
       const res = await fetch("/api/admin/list?resource=collections", {
         cache: "no-store",
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        throw new Error("Không thể tải danh sách chuyên đề.");
+      }
       const json = (await res.json()) as {
         collections?: AdminCollectionWithThreads[];
       };
-      setCollections(json.collections ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      return json.collections ?? [];
+    },
+  });
 
-  useEffect(() => {
-    void fetchCollections();
-  }, [fetchCollections]);
+  const collections = collectionsQuery.data ?? [];
+  const loading = collectionsQuery.isLoading && !collectionsQuery.data;
 
   const attachTarget =
     collections.find((c) => c.id === attachTargetId) ?? null;
 
   async function refreshAll() {
-    await fetchCollections();
+    await queryClient.invalidateQueries({
+      queryKey: ["admin-list", "collections"],
+    });
     router.refresh();
   }
 
@@ -108,6 +108,11 @@ export function AdminCollectionsTab({
       setDeleteTarget(null);
       onNotice({ type: "success", text: "Đã xóa bộ sưu tập chuyên đề." });
       await refreshAll();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi xóa chuyên đề.",
+      });
     } finally {
       setBusyId(null);
     }
@@ -129,6 +134,11 @@ export function AdminCollectionsTab({
       }
       onNotice({ type: "success", text: "Đã gỡ bài viết khỏi chuyên đề." });
       await refreshAll();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi gỡ bài viết khỏi chuyên đề.",
+      });
     } finally {
       setBusyId(null);
     }

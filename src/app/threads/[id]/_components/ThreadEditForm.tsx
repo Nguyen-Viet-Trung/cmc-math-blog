@@ -37,20 +37,26 @@ export function ThreadEditForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return;
     setSaving(true);
-    const res = await updateThreadAction({
-      threadId,
-      title,
-      gradeTag,
-      content,
-      imageUrls,
-    });
-    setSaving(false);
-    if (!res.ok) {
-      onError(res.error || "Không thể lưu chỉnh sửa bài viết.");
-      return;
+    try {
+      const res = await updateThreadAction({
+        threadId,
+        title,
+        gradeTag,
+        content,
+        imageUrls,
+      });
+      if (!res.ok) {
+        onError(res.error || "Không thể lưu chỉnh sửa bài viết.");
+        return;
+      }
+      await onSaved();
+    } catch {
+      onError("Không thể kết nối máy chủ khi lưu chỉnh sửa bài viết.");
+    } finally {
+      setSaving(false);
     }
-    await onSaved();
   }
 
   return (

@@ -6,4 +6,5 @@ export const CACHE_TAGS = {
   rewards: "rewards",
   feedbacks: "feedbacks",
   collections: "collections",
+  forumRules: "forum-rules",
 } as const;

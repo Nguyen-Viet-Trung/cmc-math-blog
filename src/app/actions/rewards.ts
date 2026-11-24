@@ -7,6 +7,7 @@ import {
   getCurrentUserProfile,
   redeemRewardTransaction,
 } from "@/lib/forum-service";
+import { checkRateLimit } from "@/lib/rate-limit";
 
 export async function redeemRewardAction(input: {
   rewardId: string;
@@ -22,6 +23,17 @@ export async function redeemRewardAction(input: {
   const user = await getCurrentUserProfile();
   if (!user) {
     return { ok: false, error: "Vui lòng đăng nhập để đổi quà." };
+  }
+
+  const rate = checkRateLimit(`redeem:${user.id}`, {
+    maxRequests: 8,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (!rate.allowed) {
+    return {
+      ok: false,
+      error: `Bạn thao tác đổi quà quá nhanh. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+    };
   }
 
   const note = input.studentNote.trim();

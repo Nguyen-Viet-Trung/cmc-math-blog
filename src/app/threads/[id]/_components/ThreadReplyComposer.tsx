@@ -1,13 +1,21 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { CornerDownRight, Loader2, Send, X } from "lucide-react";
-import { MathEditor } from "@/components/MathEditor";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import type { ReplyItem, ThreadStatus, UserProfile } from "@/lib/types";
+
+const MathEditor = dynamic(
+  () => import("@/components/MathEditor").then((m) => m.MathEditor),
+  {
+    loading: () => <Skeleton className="h-44 w-full rounded-xl" />,
+  }
+);
 
 interface ThreadReplyComposerProps {
   threadId: string;

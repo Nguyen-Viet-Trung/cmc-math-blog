@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { Gift, Pencil, Plus, Trash2 } from "lucide-react";
 import { deleteRewardAction } from "@/app/actions/admin";
-import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PaginationBar } from "@/components/PaginationBar";
 import { ActionMenu } from "@/components/ui/action-menu";
 import { Badge } from "@/components/ui/badge";
@@ -19,10 +19,21 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Skeleton } from "@/components/ui/skeleton";
 import { useAdminPaginatedList } from "@/hooks/useAdminPaginatedList";
 import type { PaginatedResult } from "@/lib/pagination";
 import type { RewardItem } from "@/lib/types";
-import { AdminRewardDrawer } from "./modals/AdminRewardDrawer";
+
+const AdminRewardDrawer = dynamic(
+  () =>
+    import("./modals/AdminRewardDrawer").then((m) => m.AdminRewardDrawer),
+  { ssr: false }
+);
+
+const ConfirmDialog = dynamic(
+  () => import("@/components/ConfirmDialog").then((m) => m.ConfirmDialog),
+  { ssr: false }
+);
 
 export interface AdminNotice {
   type: "success" | "error";
@@ -33,25 +44,26 @@ export function AdminRewardsTab({
   initialRewards,
   onNotice,
 }: {
-  initialRewards: PaginatedResult<RewardItem>;
+  initialRewards?: PaginatedResult<RewardItem>;
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(initialRewards.pageSize);
+  const [pageSize, setPageSize] = useState(initialRewards?.pageSize ?? 8);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingReward, setEditingReward] = useState<RewardItem | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<RewardItem | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const { data: rewardsData, isFetching } = useAdminPaginatedList({
-    resource: "rewards",
-    page,
-    pageSize,
-    initialData: initialRewards,
-    onPageClamp: setPage,
-  });
+  const { data: rewardsData, isLoading, isFetching } =
+    useAdminPaginatedList<RewardItem>({
+      resource: "rewards",
+      page,
+      pageSize,
+      initialData: initialRewards,
+      onPageClamp: setPage,
+    });
 
   async function refreshRewards() {
     await queryClient.invalidateQueries({
@@ -104,7 +116,12 @@ export function AdminRewardsTab({
         </Button>
       </div>
 
-      {rewardsData.items.length === 0 ? (
+      {isLoading ? (
+        <Card className="space-y-3 p-5">
+          <Skeleton className="h-12 w-full" />
+          <Skeleton className="h-12 w-full" />
+        </Card>
+      ) : rewardsData.items.length === 0 ? (
         <Empty className="py-10">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -248,30 +265,30 @@ export function AdminRewardsTab({
         </>
       )}
 
-      <AdminRewardDrawer
-        open={drawerOpen}
-        editingReward={editingReward}
-        onOpenChange={setDrawerOpen}
-        onSaved={refreshRewards}
-        onNotice={onNotice}
-      />
+      {drawerOpen && (
+        <AdminRewardDrawer
+          open={drawerOpen}
+          editingReward={editingReward}
+          onOpenChange={setDrawerOpen}
+          onSaved={refreshRewards}
+          onNotice={onNotice}
+        />
+      )}
 
-      <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        onOpenChange={(open) => {
-          if (!open) setDeleteTarget(null);
-        }}
-        title="Xóa hoặc ẩn phần quà?"
-        description={
-          deleteTarget
-            ? `Phần quà "${deleteTarget.name}" sẽ bị xóa vĩnh viễn nếu chưa có đơn đổi, hoặc chuyển sang trạng thái ẩn để giữ lịch sử đối soát.`
-            : ""
-        }
-        confirmLabel="Xóa / Ẩn phần quà"
-        confirmVariant="destructive"
-        isLoading={deleting}
-        onConfirm={handleConfirmDelete}
-      />
+      {deleteTarget && (
+        <ConfirmDialog
+          open={Boolean(deleteTarget)}
+          onOpenChange={(open) => {
+            if (!open) setDeleteTarget(null);
+          }}
+          title="Xóa hoặc ẩn phần quà?"
+          description={`Phần quà "${deleteTarget.name}" sẽ bị xóa vĩnh viễn nếu chưa có đơn đổi, hoặc chuyển sang trạng thái ẩn để giữ lịch sử đối soát.`}
+          confirmLabel="Xóa / Ẩn phần quà"
+          confirmVariant="destructive"
+          isLoading={deleting}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
     </div>
   );
 }

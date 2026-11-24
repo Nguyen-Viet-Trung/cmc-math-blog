@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import postgres from "postgres";
 import { createClient } from "@supabase/supabase-js";
+import { ensureForumRulesSeeded } from "./seed-forum-rules.mjs";
 
 const rootDir = process.cwd();
 const envLocalPath = path.join(rootDir, ".env.local");
@@ -184,6 +185,8 @@ async function main() {
       `;
       console.log("✅ Đã khởi tạo 4 mốc quà tặng mẫu trong cửa hàng đổi quà.");
     }
+
+    await ensureForumRulesSeeded(sql);
 
     if (adminEmail) {
       const updated = await sql`

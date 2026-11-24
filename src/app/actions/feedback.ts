@@ -8,7 +8,10 @@ import { getSql } from "@/lib/db";
 import { isDatabaseConfigured } from "@/lib/env";
 import { getCurrentUserProfile } from "@/lib/forum-service";
 import { checkRateLimit } from "@/lib/rate-limit";
-import { deleteStorageImagesByUrls } from "@/lib/storage-cleanup";
+import {
+  deleteStorageImagesByUrls,
+  validateOwnedStorageImageUrls,
+} from "@/lib/storage-cleanup";
 import type { FeedbackCategory, FeedbackStatus } from "@/lib/types";
 
 const ALLOWED_CATEGORIES: FeedbackCategory[] = [
@@ -83,6 +86,21 @@ export async function submitFeedbackAction(input: {
       };
     }
 
+    let safeImageUrls: string[] = [];
+    if (user && input.imageUrls.length > 0) {
+      const imgCheck = validateOwnedStorageImageUrls({
+        urls: input.imageUrls,
+        ownerUserId: user.id,
+        userRole: user.role,
+        folder: "threads",
+        maxCount: 4,
+      });
+      if (!imgCheck.ok) {
+        return { ok: false, error: imgCheck.error };
+      }
+      safeImageUrls = imgCheck.urls;
+    }
+
     const contactName = user
       ? user.displayName
       : (input.contactName?.trim().slice(0, 60) || "Học sinh");
@@ -108,7 +126,7 @@ export async function submitFeedbackAction(input: {
         ${title},
         ${description},
         ${pageUrl},
-        ${sql.array(user ? input.imageUrls : [])},
+        ${sql.array(safeImageUrls)},
         ${contactName},
         ${contactEmail}
       )

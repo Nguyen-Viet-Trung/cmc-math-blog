@@ -85,6 +85,11 @@ export function AdminThreadsTab({
       }
       onNotice({ type: "success", text: "Đã cập nhật loại bài viết!" });
       await refreshThreads();
+    } catch {
+      onNotice({
+        type: "error",
+        text: "Không thể kết nối máy chủ khi đổi loại bài viết.",
+      });
     } finally {
       setBusyId(null);
     }

@@ -6,13 +6,14 @@ import {
   getAdminDashboardCounts,
   listAdminRewardsPaginated,
 } from "@/lib/admin-list-service";
+import { getForumRules } from "@/lib/document-service";
 import { isDatabaseConfigured } from "@/lib/env";
 import {
   getCurrentUserProfile,
   getSiteSettings,
 } from "@/lib/forum-service";
 import { AdminDashboardClient } from "./AdminDashboardClient";
-import { normalizeAdminTab } from "./_components/AdminSubNav";
+import { normalizeAdminTab } from "./_components/admin-tabs";
 
 export default async function AdminPortalPage({
   searchParams,
@@ -49,12 +50,15 @@ export default async function AdminPortalPage({
   const initialTab = normalizeAdminTab(sp.tab);
   const autoOpenCreate = sp.create === "1";
 
-  // Chỉ tải cấu hình, bộ đếm tổng quan và tab mặc định (Quà tặng) ở SSR;
-  // các tab khác được code-split và lazy-fetch qua /api/admin/list khi Admin mở tab.
-  const [settings, counts, initialRewards] = await Promise.all([
+  // Chỉ tải cấu hình, bộ đếm tổng quan và dữ liệu của đúng tab đang mở ở SSR;
+  // các tab khác được code-split và lazy-fetch qua /api/admin/list khi Admin chuyển tab.
+  const [settings, counts, initialRewards, initialRules] = await Promise.all([
     getSiteSettings(),
     getAdminDashboardCounts(),
-    listAdminRewardsPaginated({ page: 1, pageSize: 8 }),
+    initialTab === "rewards"
+      ? listAdminRewardsPaginated({ page: 1, pageSize: 8 })
+      : Promise.resolve(undefined),
+    initialTab === "rules" ? getForumRules() : Promise.resolve(undefined),
   ]);
 
   return (
@@ -63,6 +67,7 @@ export default async function AdminPortalPage({
       settings={settings}
       counts={counts}
       initialRewards={initialRewards}
+      initialRules={initialRules}
       initialTab={initialTab}
       autoOpenCreate={autoOpenCreate}
     />

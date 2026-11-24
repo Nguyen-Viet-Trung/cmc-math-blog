@@ -4,6 +4,7 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
+import { FORUM_RULES_SLUG } from "@/lib/default-forum-rules";
 import { isDatabaseConfigured } from "@/lib/env";
 import {
   awardChallengeReplyTransaction,
@@ -66,6 +67,58 @@ export async function saveSiteSettingsAction(input: {
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Lỗi lưu cấu hình." };
+  }
+}
+
+export async function saveForumRulesAction(input: {
+  title: string;
+  content: string;
+}): Promise<{ ok: boolean; updatedAt?: string; error?: string }> {
+  try {
+    const admin = await requireAdmin();
+    const title = input.title.trim();
+    const content = input.content.trim();
+
+    if (title.length < 3 || title.length > 160) {
+      return {
+        ok: false,
+        error: "Tiêu đề Nội quy cần dài từ 3 đến 160 ký tự.",
+      };
+    }
+    if (content.length < 20 || content.length > 50000) {
+      return {
+        ok: false,
+        error: "Nội dung Nội quy cần dài từ 20 đến 50.000 ký tự.",
+      };
+    }
+
+    const sql = getSql();
+    const rows = await sql`
+      INSERT INTO public.site_documents (slug, title, content, updated_by, updated_at)
+      VALUES (${FORUM_RULES_SLUG}, ${title}, ${content}, ${admin.id}, NOW())
+      ON CONFLICT (slug) DO UPDATE SET
+        title = EXCLUDED.title,
+        content = EXCLUDED.content,
+        updated_by = EXCLUDED.updated_by,
+        updated_at = NOW()
+      RETURNING updated_at
+    `;
+
+    revalidateTag(CACHE_TAGS.forumRules);
+    revalidatePath("/rules");
+    revalidatePath("/admin");
+
+    return {
+      ok: true,
+      updatedAt: rows[0]?.updated_at
+        ? new Date(String(rows[0].updated_at)).toISOString()
+        : new Date().toISOString(),
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : "Lỗi lưu Nội quy diễn đàn.",
+    };
   }
 }
 

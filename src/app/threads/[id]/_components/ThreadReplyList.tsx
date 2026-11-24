@@ -218,7 +218,10 @@ export function ThreadReplyList({
           {grouped.roots.map((root) => {
             const children = grouped.childrenMap.get(root.id) ?? [];
             return (
-              <div key={root.id} className="space-y-2.5">
+              <div
+                key={root.id}
+                className="space-y-2.5 [content-visibility:auto] [contain-intrinsic-size:auto_220px]"
+              >
                 <ThreadReplyCard
                   threadId={threadId}
                   reply={root}

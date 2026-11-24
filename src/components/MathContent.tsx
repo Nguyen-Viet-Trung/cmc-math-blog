@@ -1,26 +1,21 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useMemo, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import "katex/dist/katex.min.css";
-import {
-  CheckCircle2,
-  ChevronRight,
-  EyeOff,
-  Lightbulb,
-  ZoomIn,
-} from "lucide-react";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { CheckCircle2, ChevronRight, EyeOff, Lightbulb } from "lucide-react";
+import { MathImageGallery } from "@/components/MathImageGallery";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   parseMathContentSegments,
   type MathCalloutKind,
   type MathContentSegment,
 } from "@/lib/math-blocks";
+import { slugifyHeading } from "@/lib/slug";
 import { cn } from "@/lib/utils";
 
 const MathDiagram = dynamic(
@@ -57,29 +52,81 @@ function areImageUrlsEqual(a?: string[], b?: string[]): boolean {
 
 const CALLOUT_STYLES: Record<
   MathCalloutKind,
-  { wrapper: string; iconClass: string; icon: typeof Lightbulb; label: string }
+  { wrapper: string; iconClass: string; icon: typeof Lightbulb }
 > = {
   hint: {
     wrapper: "border-bounty-border bg-bounty-surface/40",
     iconClass: "text-bounty",
     icon: Lightbulb,
-    label: "Gợi ý",
   },
   solution: {
     wrapper: "border-success-border bg-success-surface/40",
     iconClass: "text-success",
     icon: CheckCircle2,
-    label: "Lời giải",
   },
   spoiler: {
     wrapper: "border-border bg-muted/45",
     iconClass: "text-muted-foreground",
     icon: EyeOff,
-    label: "Ẩn",
   },
 };
 
-function RenderSegments({ segments }: { segments: MathContentSegment[] }) {
+function extractNodeText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") {
+    return String(node);
+  }
+  if (Array.isArray(node)) {
+    return node.map(extractNodeText).join("");
+  }
+  if (node && typeof node === "object" && "props" in node) {
+    const props = (node as { props?: { children?: ReactNode } }).props;
+    return extractNodeText(props?.children);
+  }
+  return "";
+}
+
+function isSafeLinkHref(href?: string): boolean {
+  if (!href) return false;
+  const trimmed = href.trim();
+  if (trimmed.startsWith("/") || trimmed.startsWith("#")) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      parsed.protocol === "http:" ||
+      parsed.protocol === "https:" ||
+      parsed.protocol === "mailto:"
+    );
+  } catch {
+    return false;
+  }
+}
+
+const STABLE_MD_COMPONENTS: Components = {
+  h2: ({ children }) => <h2 id={slugifyHeading(extractNodeText(children))}>{children}</h2>,
+  h3: ({ children }) => <h3 id={slugifyHeading(extractNodeText(children))}>{children}</h3>,
+  a: ({ href, children }) => {
+    if (!isSafeLinkHref(href)) {
+      return <span>{children}</span>;
+    }
+    const isExternal =
+      href!.startsWith("http://") || href!.startsWith("https://");
+    return (
+      <a
+        href={href}
+        target={isExternal ? "_blank" : undefined}
+        rel={isExternal ? "noopener noreferrer" : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
+};
+
+const RenderSegments = memo(function RenderSegments({
+  segments,
+}: {
+  segments: MathContentSegment[];
+}) {
   return (
     <>
       {segments.map((seg, idx) => {
@@ -89,6 +136,7 @@ function RenderSegments({ segments }: { segments: MathContentSegment[] }) {
               <ReactMarkdown
                 remarkPlugins={REMARK_PLUGINS}
                 rehypePlugins={REHYPE_PLUGINS}
+                components={STABLE_MD_COMPONENTS}
               >
                 {formatMentionsForMarkdown(seg.content)}
               </ReactMarkdown>
@@ -143,13 +191,12 @@ function RenderSegments({ segments }: { segments: MathContentSegment[] }) {
       })}
     </>
   );
-}
+});
 
 function MathContentInner({
   content,
   imageUrls = EMPTY_IMAGE_URLS,
 }: MathContentProps) {
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const segments = useMemo(() => parseMathContentSegments(content), [content]);
 
   return (
@@ -158,55 +205,7 @@ function MathContentInner({
         <RenderSegments segments={segments} />
       </div>
 
-      {imageUrls.length > 0 && (
-        <div
-          className={
-            imageUrls.length === 1
-              ? "grid grid-cols-1 gap-3 pt-1 sm:grid-cols-[minmax(0,480px)]"
-              : "grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2"
-          }
-        >
-          {imageUrls.map((url, idx) => (
-            <button
-              key={`${url}-${idx}`}
-              type="button"
-              onClick={() => setLightboxUrl(url)}
-              className="group relative aspect-[16/10] max-h-[300px] w-full overflow-hidden rounded-xl border border-border bg-card p-2 text-left transition hover:border-primary hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={url}
-                alt={`Hình minh họa Toán ${idx + 1}`}
-                loading="lazy"
-                className="block h-full w-full rounded-lg bg-white object-contain"
-              />
-              <span className="absolute bottom-3 right-3 inline-flex items-center gap-1 rounded-md bg-foreground/85 px-2 py-1 text-[11px] font-semibold text-background backdrop-blur-sm transition group-hover:bg-primary group-hover:text-primary-foreground">
-                <ZoomIn className="size-3" aria-hidden="true" />
-                Phóng to
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      <Dialog
-        open={Boolean(lightboxUrl)}
-        onOpenChange={(open) => {
-          if (!open) setLightboxUrl(null);
-        }}
-      >
-        <DialogContent className="max-w-5xl border-border bg-card p-2 sm:p-3">
-          <DialogTitle className="sr-only">Xem ảnh phóng to</DialogTitle>
-          {lightboxUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={lightboxUrl}
-              alt="Ảnh phóng to"
-              className="mx-auto block max-h-[86vh] max-w-full rounded-lg bg-white object-contain"
-            />
-          )}
-        </DialogContent>
-      </Dialog>
+      {imageUrls.length > 0 && <MathImageGallery imageUrls={imageUrls} />}
     </div>
   );
 }

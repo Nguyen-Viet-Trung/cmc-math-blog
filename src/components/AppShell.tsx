@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Award,
+  CheckCircle2,
   Menu,
   PanelLeftClose,
   PanelLeftOpen,
@@ -27,15 +29,25 @@ const AppMobileDrawer = dynamic(
   { ssr: false }
 );
 
+const SignOutDialog = dynamic(
+  () => import("@/components/SignOutDialog").then((m) => m.SignOutDialog),
+  { ssr: false }
+);
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { siteName, user, isDemoMode, isLoadingSession, refreshSession } =
-    useAppSession();
+  const queryClient = useQueryClient();
+  const { siteName, user, isDemoMode, isLoadingSession } = useAppSession();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
 
   const [pendingHref, setPendingHref] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerMounted, setDrawerMounted] = useState(false);
+  const [signOutOpen, setSignOutOpen] = useState(false);
+  const [signOutMounted, setSignOutMounted] = useState(false);
+  const [signedOutToast, setSignedOutToast] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
@@ -60,23 +72,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         e.button !== 0 ||
         e.metaKey ||
         e.ctrlKey ||
-        e.shiftKey
+        e.shiftKey ||
+        e.altKey
       ) {
         return;
       }
       const anchor = (e.target as HTMLElement | null)?.closest("a");
       if (!anchor) return;
+      if (
+        (anchor.target && anchor.target !== "_self") ||
+        anchor.hasAttribute("download")
+      ) {
+        return;
+      }
       const href = anchor.getAttribute("href");
       if (!href || !href.startsWith("/") || href.startsWith("//")) return;
       const targetPath = href.split("?")[0].split("#")[0];
       const currentFull = window.location.pathname + window.location.search;
-      if (href !== currentFull && targetPath !== pathname) {
+      if (href !== currentFull && targetPath !== pathnameRef.current) {
         setPendingHref(targetPath);
       }
     }
     document.addEventListener("click", handleDocumentClick);
     return () => document.removeEventListener("click", handleDocumentClick);
-  }, [pathname]);
+  }, []);
 
   function toggleSidebarCollapse() {
     setCollapsed((prev) => {
@@ -97,20 +116,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ? `/login?next=${encodeURIComponent(pathname)}`
       : "/login";
 
-  async function handleSignOut() {
-    try {
-      const { createSupabaseBrowserClient } = await import(
-        "@/lib/supabase/client"
-      );
-      const supabase = createSupabaseBrowserClient();
-      await supabase.auth.signOut();
-    } catch {
-      // ignore
+  useEffect(() => {
+    if (!signedOutToast) return;
+    const timer = window.setTimeout(() => setSignedOutToast(false), 3200);
+    return () => window.clearTimeout(timer);
+  }, [signedOutToast]);
+
+  const openSignOutDialog = useCallback(() => {
+    setDrawerOpen(false);
+    setSignOutMounted(true);
+    setSignOutOpen(true);
+  }, []);
+
+  const performSignOut = useCallback(async () => {
+    const { createSupabaseBrowserClient } = await import(
+      "@/lib/supabase/client"
+    );
+    const supabase = createSupabaseBrowserClient();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      throw new Error(error.message || "Không thể kết thúc phiên đăng nhập.");
     }
-    await refreshSession();
+  }, []);
+
+  const handleSignOutCompleted = useCallback(() => {
+    // Xóa toàn bộ cache TanStack Query riêng tư (thông báo, admin, bài ẩn) khi đăng xuất trên máy dùng chung
+    queryClient.clear();
+    setSignedOutToast(true);
     router.push("/");
     router.refresh();
-  }
+  }, [queryClient, router]);
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -126,7 +161,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         effectivePath={effectivePath}
         user={user}
         isLoadingSession={isLoadingSession}
-        onSignOut={handleSignOut}
+        onSignOut={openSignOutDialog}
       />
 
       {/* RIGHT COLUMN: Banner + Slim Header + Main Content + Compact Footer */}
@@ -275,8 +310,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           siteName={siteName}
           effectivePath={effectivePath}
           user={user}
-          onSignOut={handleSignOut}
+          onSignOut={openSignOutDialog}
         />
+      )}
+
+      {signOutMounted && (
+        <SignOutDialog
+          open={signOutOpen}
+          onOpenChange={setSignOutOpen}
+          user={user}
+          onPerformSignOut={performSignOut}
+          onCompleted={handleSignOutCompleted}
+        />
+      )}
+
+      {signedOutToast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-success-border bg-card px-3.5 py-2.5 text-xs font-medium text-foreground shadow-lg animate-in fade-in-0 slide-in-from-bottom-2 duration-200"
+        >
+          <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+          <span>Bạn đã đăng xuất khỏi tài khoản.</span>
+        </div>
       )}
     </div>
   );

@@ -8,7 +8,7 @@ import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { AdminDashboardCounts } from "@/lib/admin-list-service";
 import type { PaginatedResult } from "@/lib/pagination";
-import type { RewardItem, SiteSettings } from "@/lib/types";
+import type { ForumDocument, RewardItem, SiteSettings } from "@/lib/types";
 import { AdminRewardsTab, type AdminNotice } from "./_components/AdminRewardsTab";
 import {
   AdminSubNav,
@@ -65,6 +65,11 @@ const AdminSettingsTab = dynamic(
   { loading: () => <AdminTabSkeleton /> }
 );
 
+const AdminRulesTab = dynamic(
+  () => import("./_components/AdminRulesTab").then((m) => m.AdminRulesTab),
+  { loading: () => <AdminTabSkeleton /> }
+);
+
 const AdminCollectionsTab = dynamic(
   () =>
     import("./_components/AdminCollectionsTab").then(
@@ -78,13 +83,15 @@ export function AdminDashboardClient({
   settings,
   counts,
   initialRewards,
+  initialRules,
   initialTab = "rewards",
   autoOpenCreate = false,
 }: {
   isDemo: boolean;
   settings: SiteSettings;
   counts: AdminDashboardCounts;
-  initialRewards: PaginatedResult<RewardItem>;
+  initialRewards?: PaginatedResult<RewardItem>;
+  initialRules?: ForumDocument;
   initialTab?: AdminTabId;
   autoOpenCreate?: boolean;
 }) {
@@ -280,6 +287,9 @@ export function AdminDashboardClient({
               totalFeedbacksCount={counts.feedbacksCount}
               onNotice={setNotice}
             />
+          )}
+          {tab === "rules" && (
+            <AdminRulesTab initialRules={initialRules} onNotice={setNotice} />
           )}
           {tab === "settings" && (
             <AdminSettingsTab settings={settings} onNotice={setNotice} />

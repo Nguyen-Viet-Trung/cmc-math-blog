@@ -1,5 +1,6 @@
-# Bảo mật tuyệt đối các file chứa API Keys / Mật khẩu (KHÔNG BAO GIỜ đẩy lên Git)
+# Bảo mật tuyệt đối các file chứa API Keys / Mật khẩu / Ghi chú deploy cục bộ (KHÔNG BAO GIỜ đẩy lên Git)
 key.txt
+DEPLOY.md
 .env
 .env.*
 !.env.example

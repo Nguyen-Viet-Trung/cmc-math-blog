@@ -32,7 +32,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useAppSession } from "@/hooks/useAppSession";
+import { useRefreshAppSession } from "@/hooks/useAppSession";
 import { useThreadDiscussion } from "@/hooks/useThreadDiscussion";
 import { formatDateTimeVN, formatRemainingTime } from "@/lib/format";
 import { isChallengeBlindActive } from "@/lib/rules";
@@ -65,7 +65,7 @@ export function ThreadInteractive({
   viewer: UserProfile | null;
 }) {
   const router = useRouter();
-  const { refreshSession } = useAppSession();
+  const refreshSession = useRefreshAppSession();
   const [isEditingThread, setIsEditingThread] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deletingThread, setDeletingThread] = useState(false);
@@ -190,11 +190,16 @@ export function ThreadInteractive({
     }
   }, [viewer, bookmarkBusy, bookmarked, thread.id]);
 
+  const acceptMutateAsync = acceptReplyMutation.mutateAsync;
+  const awardChallengeMutateAsync = awardChallengeMutation.mutateAsync;
+  const toggleUpvoteMutateAsync = toggleUpvoteMutation.mutateAsync;
+  const postReplyMutateAsync = postReplyMutation.mutateAsync;
+
   const handleAccept = useCallback(
     async (replyId: string) => {
       setFeedback(null);
       try {
-        const res = await acceptReplyMutation.mutateAsync(replyId);
+        const res = await acceptMutateAsync(replyId);
         setFeedback({
           type: "success",
           text: res.message || "Đã cộng điểm cho lời giải đúng!",
@@ -210,14 +215,14 @@ export function ThreadInteractive({
         });
       }
     },
-    [acceptReplyMutation, refreshSession]
+    [acceptMutateAsync, refreshSession]
   );
 
   const handleAwardChallenge = useCallback(
     async (replyId: string) => {
       setFeedback(null);
       try {
-        const res = await awardChallengeMutation.mutateAsync(replyId);
+        const res = await awardChallengeMutateAsync(replyId);
         setFeedback({
           type: "success",
           text: res.message || "Đã chấm đúng và trao điểm Thử thách Tuần!",
@@ -233,7 +238,7 @@ export function ThreadInteractive({
         });
       }
     },
-    [awardChallengeMutation, refreshSession]
+    [awardChallengeMutateAsync, refreshSession]
   );
 
   const handleUpvote = useCallback(
@@ -246,7 +251,7 @@ export function ThreadInteractive({
         return;
       }
       try {
-        await toggleUpvoteMutation.mutateAsync(replyId);
+        await toggleUpvoteMutateAsync(replyId);
       } catch (err) {
         setFeedback({
           type: "error",
@@ -257,7 +262,7 @@ export function ThreadInteractive({
         });
       }
     },
-    [viewer, toggleUpvoteMutation]
+    [viewer, toggleUpvoteMutateAsync]
   );
 
   const handlePostReply = useCallback(
@@ -267,9 +272,9 @@ export function ThreadInteractive({
       parentReplyId?: string | null;
     }) => {
       setFeedback(null);
-      await postReplyMutation.mutateAsync(input);
+      await postReplyMutateAsync(input);
     },
-    [postReplyMutation]
+    [postReplyMutateAsync]
   );
 
   const handleReplyTo = useCallback((reply: ReplyItem) => {

@@ -12,8 +12,7 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/native-select";
 import { Spinner } from "@/components/ui/spinner";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAppSession } from "@/hooks/useAppSession";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { useRefreshAppSession } from "@/hooks/useAppSession";
 
 const GRADE_OPTIONS = [
   "Lớp 6",
@@ -58,7 +57,7 @@ export function LoginForm({
   nextPath?: string;
 }) {
   const router = useRouter();
-  const { refreshSession } = useAppSession();
+  const refreshSession = useRefreshAppSession();
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -84,6 +83,9 @@ export function LoginForm({
     setInfo(null);
 
     try {
+      const { createSupabaseBrowserClient } = await import(
+        "@/lib/supabase/client"
+      );
       const supabase = createSupabaseBrowserClient();
 
       if (mode === "login") {

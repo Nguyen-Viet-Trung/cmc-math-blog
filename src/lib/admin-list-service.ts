@@ -37,14 +37,26 @@ const getCachedAdminDashboardCounts = unstable_cache(
     const rows = await sql`
       SELECT
         (SELECT COUNT(*)::int FROM public.rewards) AS rewards_count,
-        (SELECT COUNT(*)::int FROM public.redemptions) AS redemptions_count,
-        (SELECT COUNT(*)::int FROM public.redemptions WHERE status = 'pending') AS pending_redemptions_count,
+        r_stats.redemptions_count,
+        r_stats.pending_redemptions_count,
         (SELECT COUNT(*)::int FROM public.profiles) AS students_count,
         (SELECT COUNT(*)::int FROM public.threads) AS threads_count,
         (SELECT COUNT(*)::int FROM public.replies) AS replies_count,
-        (SELECT COUNT(*)::int FROM public.feedbacks) AS feedbacks_count,
-        (SELECT COUNT(*)::int FROM public.feedbacks WHERE status IN ('open', 'in_progress')) AS open_feedbacks_count,
+        f_stats.feedbacks_count,
+        f_stats.open_feedbacks_count,
         (SELECT COUNT(*)::int FROM public.collections) AS collections_count
+      FROM (
+        SELECT
+          COUNT(*)::int AS redemptions_count,
+          COUNT(*) FILTER (WHERE status = 'pending')::int AS pending_redemptions_count
+        FROM public.redemptions
+      ) r_stats
+      CROSS JOIN (
+        SELECT
+          COUNT(*)::int AS feedbacks_count,
+          COUNT(*) FILTER (WHERE status IN ('open', 'in_progress'))::int AS open_feedbacks_count
+        FROM public.feedbacks
+      ) f_stats
     `;
     const r = rows[0] ?? {};
     return {

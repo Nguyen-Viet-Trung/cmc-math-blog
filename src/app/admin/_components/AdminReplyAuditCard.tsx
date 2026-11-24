@@ -46,8 +46,8 @@ interface AdminReplyAuditCardProps {
   reply: AdminReplyAuditItem;
   flags: ReplySuspicionCode[];
   isBusy: boolean;
-  onRevoke: (reason: string) => void;
-  onDelete: (reason: string) => void;
+  onRevoke: (reply: AdminReplyAuditItem, reason: string) => void;
+  onDelete: (reply: AdminReplyAuditItem, reason: string) => void;
 }
 
 export const AdminReplyAuditCard = memo(function AdminReplyAuditCard({
@@ -160,7 +160,7 @@ export const AdminReplyAuditCard = memo(function AdminReplyAuditCard({
               size="sm"
               variant="bounty"
               disabled={isBusy}
-              onClick={() => onRevoke(reason)}
+              onClick={() => onRevoke(r, reason)}
             >
               <RotateCcw className="h-3.5 w-3.5" />
               Hủy duyệt &amp; Thu hồi -{r.awardedPoints}đ
@@ -171,7 +171,7 @@ export const AdminReplyAuditCard = memo(function AdminReplyAuditCard({
             size="sm"
             variant="destructive"
             disabled={isBusy}
-            onClick={() => onDelete(reason)}
+            onClick={() => onDelete(r, reason)}
           >
             <Trash2 className="h-3.5 w-3.5" />
             {r.isAccepted ? "Xóa & Thu hồi điểm" : "Xóa bình luận"}

@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import Link from "next/link";
 import { LogIn, LogOut, ShieldCheck, Sigma } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -15,10 +16,10 @@ interface AppSidebarProps {
   effectivePath: string;
   user: UserProfile | null;
   isLoadingSession: boolean;
-  onSignOut: () => Promise<void>;
+  onSignOut: () => void;
 }
 
-export function AppSidebar({
+export const AppSidebar = memo(function AppSidebar({
   siteName,
   collapsed,
   effectivePath,
@@ -253,4 +254,4 @@ export function AppSidebar({
       </div>
     </aside>
   );
-}
+});

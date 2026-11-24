@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck } from "lucide-react";
@@ -14,7 +14,7 @@ interface NotificationsPayload {
   unreadCount: number;
 }
 
-export function NotificationBell() {
+export const NotificationBell = memo(function NotificationBell() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -158,4 +158,4 @@ export function NotificationBell() {
       )}
     </div>
   );
-}
+});

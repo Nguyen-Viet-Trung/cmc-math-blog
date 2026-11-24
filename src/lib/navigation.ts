@@ -4,6 +4,7 @@ import {
   Bug,
   Gift,
   Layers,
+  ScrollText,
   Trophy,
   type LucideIcon,
 } from "lucide-react";
@@ -20,6 +21,7 @@ export const MAIN_NAV_ITEMS: NavItemConfig[] = [
   { href: "/bookmarks", label: "Sổ tay", icon: Bookmark },
   { href: "/rewards", label: "Đổi quà", icon: Gift },
   { href: "/leaderboard", label: "Bảng vàng", icon: Trophy },
+  { href: "/rules", label: "Nội quy", icon: ScrollText },
   { href: "/feedback", label: "Góp ý & Báo lỗi", icon: Bug },
 ];
 
@@ -33,6 +35,7 @@ export function getRoutePageTitle(pathname: string): string {
   if (pathname.startsWith("/bookmarks")) return "Sổ tay bài toán";
   if (pathname.startsWith("/rewards")) return "Đổi quà";
   if (pathname.startsWith("/leaderboard")) return "Bảng vàng";
+  if (pathname.startsWith("/rules")) return "Nội quy diễn đàn";
   if (pathname.startsWith("/feedback")) return "Góp ý & Báo lỗi";
   if (pathname.startsWith("/profile")) return "Hồ sơ học sinh";
   if (pathname.startsWith("/members/")) return "Hồ sơ thành viên";

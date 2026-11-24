@@ -7,6 +7,7 @@ import {
   listAdminThreadsPaginated,
 } from "@/lib/admin-list-service";
 import { listCollectionsForAdmin } from "@/lib/collection-service";
+import { getForumRules } from "@/lib/document-service";
 import {
   getCurrentUserProfile,
   listAllRepliesForAdmin,
@@ -75,6 +76,11 @@ export async function GET(request: Request) {
     case "collections":
       return NextResponse.json(
         { collections: await listCollectionsForAdmin() },
+        { headers }
+      );
+    case "rules":
+      return NextResponse.json(
+        { rules: await getForumRules() },
         { headers }
       );
     default:

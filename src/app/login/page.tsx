@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { isSupabaseAuthConfigured } from "@/lib/env";
-import { getCurrentUserProfile } from "@/lib/forum-service";
+import { getCurrentUserId } from "@/lib/forum-service";
 import { sanitizeRedirectPath } from "@/lib/rules";
 import { LoginForm } from "./LoginForm";
 
@@ -9,13 +9,13 @@ export default async function LoginPage({
 }: {
   searchParams: Promise<{ next?: string }>;
 }) {
-  const [user, params] = await Promise.all([
-    getCurrentUserProfile(),
+  const [userId, params] = await Promise.all([
+    getCurrentUserId(),
     searchParams,
   ]);
   const safeNext = sanitizeRedirectPath(params.next);
 
-  if (user) {
+  if (userId) {
     redirect(safeNext);
   }
 

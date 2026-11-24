@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useMemo, useState } from "react";
+import { memo, useId, useMemo, useState } from "react";
 import {
   AlertCircle,
   ExternalLink,
@@ -162,9 +162,8 @@ function SvgFunctionPlot({ source }: { source: string }) {
   const hasOriginY = spec.yMin <= 0 && spec.yMax >= 0;
   const axisXPos = hasOriginY ? toSvgY(0) : SVG_H - PAD;
   const axisYPos = hasOriginX ? toSvgX(0) : PAD;
-  const clipId = `graph-clip-${Math.abs(
-    source.split("").reduce((acc, ch) => (acc * 31 + ch.charCodeAt(0)) | 0, 7)
-  )}`;
+  const reactClipId = useId();
+  const clipId = `graph-clip-${reactClipId.replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   return (
     <div className="my-3 overflow-hidden rounded-lg border border-border bg-card">

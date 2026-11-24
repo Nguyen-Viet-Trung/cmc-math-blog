@@ -9,7 +9,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { useAppSession } from "@/hooks/useAppSession";
+import { useRefreshAppSession } from "@/hooks/useAppSession";
 import type { SiteSettings } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
@@ -21,7 +21,7 @@ export function AdminSettingsTab({
   onNotice: (n: AdminNotice) => void;
 }) {
   const router = useRouter();
-  const { refreshSession } = useAppSession();
+  const refreshSession = useRefreshAppSession();
   const [siteName, setSiteName] = useState(settings.siteName);
   const [defaultPoints, setDefaultPoints] = useState(
     String(settings.defaultSolvedPoints)

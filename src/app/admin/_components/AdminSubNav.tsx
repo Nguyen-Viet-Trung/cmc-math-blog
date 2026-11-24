@@ -7,6 +7,7 @@ import {
   Gift,
   Layers,
   MessageSquareWarning,
+  ScrollText,
   Settings,
   Users,
   type LucideIcon,
@@ -14,34 +15,9 @@ import {
 import { NativeSelect } from "@/components/ui/native-select";
 import type { AdminDashboardCounts } from "@/lib/admin-list-service";
 import { cn } from "@/lib/utils";
+import type { AdminTabId } from "./admin-tabs";
 
-export type AdminTabId =
-  | "rewards"
-  | "redemptions"
-  | "students"
-  | "threads"
-  | "collections"
-  | "replies"
-  | "feedbacks"
-  | "settings";
-
-const VALID_ADMIN_TABS = new Set<AdminTabId>([
-  "rewards",
-  "redemptions",
-  "students",
-  "threads",
-  "collections",
-  "replies",
-  "feedbacks",
-  "settings",
-]);
-
-export function normalizeAdminTab(raw?: string | null): AdminTabId {
-  if (raw && VALID_ADMIN_TABS.has(raw as AdminTabId)) {
-    return raw as AdminTabId;
-  }
-  return "rewards";
-}
+export type { AdminTabId } from "./admin-tabs";
 
 export interface AdminNavItem {
   id: AdminTabId;
@@ -145,6 +121,13 @@ export function buildAdminNavGroups(
     {
       heading: "Hệ thống",
       items: [
+        {
+          id: "rules",
+          label: "Nội quy diễn đàn",
+          description:
+            "Soạn thảo và cập nhật bộ Nội quy Rich Text hiển thị công khai cho toàn bộ thành viên.",
+          icon: ScrollText,
+        },
         {
           id: "settings",
           label: "Cài đặt",

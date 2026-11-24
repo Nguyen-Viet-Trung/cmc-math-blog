@@ -9,7 +9,6 @@ import {
   createReplyAction,
   toggleUpvoteReplyAction,
 } from "@/app/actions/forum";
-import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type {
   ReplyItem,
   ThreadDiscussionSnapshot,
@@ -87,73 +86,92 @@ export function useThreadDiscussion({
       return;
     }
 
-    let supabase: ReturnType<typeof createSupabaseBrowserClient>;
-    try {
-      supabase = createSupabaseBrowserClient();
-    } catch {
-      setRealtimeState("offline");
-      return;
-    }
+    let cancelled = false;
+    let activeChannel: RealtimeChannel | null = null;
+    let activeSupabase: { removeChannel: (ch: RealtimeChannel) => Promise<unknown> } | null =
+      null;
 
-    const presenceKey =
-      viewer?.id ?? `guest-${Math.random().toString(36).slice(2, 9)}`;
+    void (async () => {
+      let supabase: ReturnType<
+        typeof import("@/lib/supabase/client")["createSupabaseBrowserClient"]
+      >;
+      try {
+        const { createSupabaseBrowserClient } = await import(
+          "@/lib/supabase/client"
+        );
+        if (cancelled) return;
+        supabase = createSupabaseBrowserClient();
+      } catch {
+        if (!cancelled) setRealtimeState("offline");
+        return;
+      }
 
-    const channel = supabase.channel(`thread:${threadId}`, {
-      config: {
-        broadcast: { self: false },
-        presence: { key: presenceKey },
-      },
-    });
+      activeSupabase = supabase;
+      const presenceKey =
+        viewer?.id ?? `guest-${Math.random().toString(36).slice(2, 9)}`;
 
-    channel
-      .on("broadcast", { event: "thread_updated" }, ({ payload }) => {
-        const data = payload as BroadcastPayload | undefined;
-        // Bỏ qua sự kiện do chính người dùng hiện tại phát ra từ Server Action (tránh self-toast & refetch thừa)
-        if (data?.senderId && viewer?.id && data.senderId === viewer.id) {
-          return;
-        }
-        if (data?.kind === "new_reply") {
-          setLiveToast(
-            data.senderName
-              ? `${data.senderName} vừa gửi một lời giải mới!`
-              : "Có lời giải mới vừa được đăng!"
-          );
-        } else if (data?.kind === "answer_accepted") {
-          setLiveToast("Chủ bài đăng vừa chọn lời giải đúng và trao điểm thưởng!");
-        }
-        scheduleInvalidate();
-      })
-      .on("presence", { event: "sync" }, () => {
-        const state = channel.presenceState();
-        const total = Object.keys(state).length;
-        setOnlineCount(Math.max(1, total));
-      })
-      .subscribe(async (status) => {
-        if (status === "SUBSCRIBED") {
-          setRealtimeState("live");
-          await channel
-            .track({
-              name: viewer?.displayName ?? "Khách",
-              joinedAt: Date.now(),
-            })
-            .catch(() => {});
-        } else if (
-          status === "CHANNEL_ERROR" ||
-          status === "TIMED_OUT" ||
-          status === "CLOSED"
-        ) {
-          setRealtimeState("offline");
-        }
+      const channel = supabase.channel(`thread:${threadId}`, {
+        config: {
+          broadcast: { self: false },
+          presence: { key: presenceKey },
+        },
       });
+      activeChannel = channel;
 
-    channelRef.current = channel;
+      channel
+        .on("broadcast", { event: "thread_updated" }, ({ payload }) => {
+          const data = payload as BroadcastPayload | undefined;
+          // Bỏ qua sự kiện do chính người dùng hiện tại phát ra từ Server Action (tránh self-toast & refetch thừa)
+          if (data?.senderId && viewer?.id && data.senderId === viewer.id) {
+            return;
+          }
+          if (data?.kind === "new_reply") {
+            setLiveToast(
+              data.senderName
+                ? `${data.senderName} vừa gửi một lời giải mới!`
+                : "Có lời giải mới vừa được đăng!"
+            );
+          } else if (data?.kind === "answer_accepted") {
+            setLiveToast("Chủ bài đăng vừa chọn lời giải đúng và trao điểm thưởng!");
+          }
+          scheduleInvalidate();
+        })
+        .on("presence", { event: "sync" }, () => {
+          const state = channel.presenceState();
+          const total = Object.keys(state).length;
+          setOnlineCount(Math.max(1, total));
+        })
+        .subscribe(async (status) => {
+          if (cancelled) return;
+          if (status === "SUBSCRIBED") {
+            setRealtimeState("live");
+            await channel
+              .track({
+                name: viewer?.displayName ?? "Khách",
+                joinedAt: Date.now(),
+              })
+              .catch(() => {});
+          } else if (
+            status === "CHANNEL_ERROR" ||
+            status === "TIMED_OUT" ||
+            status === "CLOSED"
+          ) {
+            setRealtimeState("offline");
+          }
+        });
+
+      channelRef.current = channel;
+    })();
 
     return () => {
+      cancelled = true;
       if (invalidateTimerRef.current) {
         clearTimeout(invalidateTimerRef.current);
       }
       channelRef.current = null;
-      void supabase.removeChannel(channel);
+      if (activeSupabase && activeChannel) {
+        void activeSupabase.removeChannel(activeChannel);
+      }
     };
   }, [threadId, viewer?.id, viewer?.displayName, scheduleInvalidate]);
 
@@ -373,6 +391,14 @@ export function useThreadDiscussion({
     },
   });
 
+  const invalidateDiscussion = useCallback(
+    () =>
+      queryClient.invalidateQueries({
+        queryKey: ["thread-discussion", threadId],
+      }),
+    [queryClient, threadId]
+  );
+
   return {
     discussion: discussionQuery.data,
     isFetching: discussionQuery.isFetching,
@@ -380,8 +406,7 @@ export function useThreadDiscussion({
     onlineCount,
     liveToast,
     broadcastUpdate,
-    invalidateDiscussion: () =>
-      queryClient.invalidateQueries({ queryKey }),
+    invalidateDiscussion,
     postReplyMutation,
     toggleUpvoteMutation,
     acceptReplyMutation,

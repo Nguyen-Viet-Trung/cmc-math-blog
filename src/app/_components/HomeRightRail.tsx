@@ -2,10 +2,14 @@ import Link from "next/link";
 import { Clock, Flame } from "lucide-react";
 import { formatRemainingTime } from "@/lib/format";
 import { isChallengeBlindActive } from "@/lib/rules";
-import type { RewardItem, ThreadSummary, UserProfile } from "@/lib/types";
+import type {
+  PublicLeaderboardEntry,
+  RewardItem,
+  ThreadSummary,
+} from "@/lib/types";
 
 interface HomeRightRailProps {
-  activeLeaders: UserProfile[];
+  activeLeaders: PublicLeaderboardEntry[];
   rewards: RewardItem[];
   challenges?: ThreadSummary[];
 }

@@ -186,6 +186,15 @@ CREATE TABLE IF NOT EXISTS public.collection_threads (
   PRIMARY KEY (collection_id, thread_id)
 );
 
+-- 15. Tài liệu tĩnh của diễn đàn (Nội quy, Hướng dẫn... do Admin chỉnh sửa)
+CREATE TABLE IF NOT EXISTS public.site_documents (
+  slug TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  updated_by UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- Nâng cấp idempotent cho các DB đã khởi tạo trước đó
 ALTER TABLE public.threads ADD COLUMN IF NOT EXISTS challenge_ends_at TIMESTAMPTZ;
 ALTER TABLE public.threads DROP CONSTRAINT IF EXISTS threads_thread_type_check;
@@ -208,9 +217,7 @@ CREATE INDEX IF NOT EXISTS idx_point_tx_user_created ON public.point_transaction
 CREATE INDEX IF NOT EXISTS idx_redemptions_status_created ON public.redemptions(status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_leaderboard ON public.profiles(total_earned_points DESC, solved_count DESC);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_status_created ON public.feedbacks(status, created_at DESC);
-CREATE INDEX IF NOT EXISTS idx_threads_author_id ON public.threads(author_id);
 CREATE INDEX IF NOT EXISTS idx_replies_author_id ON public.replies(author_id);
-CREATE INDEX IF NOT EXISTS idx_redemptions_user_id ON public.redemptions(user_id);
 CREATE INDEX IF NOT EXISTS idx_redemptions_reward_id ON public.redemptions(reward_id);
 CREATE INDEX IF NOT EXISTS idx_feedbacks_user_id ON public.feedbacks(user_id);
 CREATE INDEX IF NOT EXISTS idx_reply_upvotes_user_id ON public.reply_upvotes(user_id);
@@ -233,6 +240,16 @@ CREATE INDEX IF NOT EXISTS idx_thread_bookmarks_thread_id ON public.thread_bookm
 CREATE INDEX IF NOT EXISTS idx_collections_published_updated ON public.collections(is_published, updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_collection_threads_col_order ON public.collection_threads(collection_id, sort_order ASC, added_at ASC);
 CREATE INDEX IF NOT EXISTS idx_collection_threads_thread_id ON public.collection_threads(thread_id);
+CREATE INDEX IF NOT EXISTS idx_site_documents_updated_by ON public.site_documents(updated_by);
+CREATE INDEX IF NOT EXISTS idx_threads_content_trgm ON public.threads USING GIN (content extensions.gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_threads_cat_pinned_created ON public.threads(category_id, is_pinned DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_status_pinned_created ON public.threads(status, is_pinned DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_type_pinned_created ON public.threads(thread_type, is_pinned DESC, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_threads_created_desc ON public.threads(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_profiles_lower_display_name ON public.profiles(LOWER(display_name)) WHERE is_banned = FALSE;
+CREATE INDEX IF NOT EXISTS idx_profiles_lower_nickname ON public.profiles(LOWER(nickname)) WHERE is_banned = FALSE AND nickname <> '';
+CREATE INDEX IF NOT EXISTS idx_profiles_leaderboard_active ON public.profiles(total_earned_points DESC, solved_count DESC, created_at ASC) WHERE is_banned = FALSE AND (total_earned_points > 0 OR solved_count > 0);
+CREATE INDEX IF NOT EXISTS idx_rewards_active_cost ON public.rewards(points_cost ASC, created_at ASC) WHERE is_active = TRUE;
 
 -- Bật Row Level Security (RLS) trên toàn bộ bảng trong schema `public` (theo chuẩn bảo mật Supabase)
 -- Ngăn chặn tuyệt đối việc dùng Publishable Key trên trình duyệt gọi thẳng PostgREST sửa điểm/quyền Admin.
@@ -251,6 +268,7 @@ ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.thread_bookmarks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collections ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.collection_threads ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.site_documents ENABLE ROW LEVEL SECURITY;
 
 -- Khởi tạo cấu hình mặc định
 INSERT INTO public.site_settings (id, site_name, default_solved_points)

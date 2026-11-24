@@ -9,8 +9,7 @@ import { getCurrentUserProfile } from "@/lib/forum-service";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { validateUploadPayload } from "@/lib/rules";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
-
-let bucketVerified = false;
+import { hasSupabaseAuthCookie } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
   try {
@@ -24,7 +23,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const user = await getCurrentUserProfile();
+    if (!(await hasSupabaseAuthCookie())) {
+      return NextResponse.json(
+        { error: "Vui lòng đăng nhập trước khi tải ảnh lên." },
+        { status: 401 }
+      );
+    }
+
+    const [user, formData] = await Promise.all([
+      getCurrentUserProfile(),
+      request.formData(),
+    ]);
     if (!user) {
       return NextResponse.json(
         { error: "Vui lòng đăng nhập trước khi tải ảnh lên." },
@@ -52,7 +61,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const formData = await request.formData();
     const file = formData.get("file");
     const folder = String(formData.get("folder") || "threads");
 
@@ -96,28 +104,6 @@ export async function POST(request: Request) {
 
     const supabaseAdmin = createSupabaseAdminClient();
 
-    if (!bucketVerified) {
-      const { data: buckets, error: listErr } =
-        await supabaseAdmin.storage.listBuckets();
-      if (!listErr) {
-        if (!buckets?.some((b) => b.name === STORAGE_BUCKET)) {
-          const { error: createErr } = await supabaseAdmin.storage.createBucket(
-            STORAGE_BUCKET,
-            {
-              public: true,
-              fileSizeLimit: MAX_BACKEND_IMAGE_BYTES,
-              allowedMimeTypes: ["image/webp", "image/jpeg", "image/png"],
-            }
-          );
-          if (!createErr) {
-            bucketVerified = true;
-          }
-        } else {
-          bucketVerified = true;
-        }
-      }
-    }
-
     const ext =
       file.type === "image/webp"
         ? "webp"
@@ -127,13 +113,33 @@ export async function POST(request: Request) {
     const uniqueName = `${Date.now()}-${crypto.randomBytes(6).toString("hex")}.${ext}`;
     const objectPath = `${folder}/${user.id}/${uniqueName}`;
 
-    const { error: uploadErr } = await supabaseAdmin.storage
+    let { error: uploadErr } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .upload(objectPath, buffer, {
         contentType: file.type,
         cacheControl: "31536000",
         upsert: false,
       });
+
+    // Chỉ gọi createBucket lười (lazy) nếu bucket chưa tồn tại để tránh tốn 150-300ms listBuckets() mỗi lần cold start
+    if (
+      uploadErr &&
+      /bucket.*not\s*found/i.test(uploadErr.message || "")
+    ) {
+      await supabaseAdmin.storage.createBucket(STORAGE_BUCKET, {
+        public: true,
+        fileSizeLimit: MAX_BACKEND_IMAGE_BYTES,
+        allowedMimeTypes: ["image/webp", "image/jpeg", "image/png"],
+      });
+      const retry = await supabaseAdmin.storage
+        .from(STORAGE_BUCKET)
+        .upload(objectPath, buffer, {
+          contentType: file.type,
+          cacheControl: "31536000",
+          upsert: false,
+        });
+      uploadErr = retry.error;
+    }
 
     if (uploadErr) {
       return NextResponse.json(

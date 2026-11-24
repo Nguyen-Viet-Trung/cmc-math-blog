@@ -2,6 +2,7 @@
 
 import { revalidatePath, revalidateTag } from "next/cache";
 import { headers } from "next/headers";
+import { after } from "next/server";
 import { CACHE_TAGS } from "@/lib/cache-tags";
 import { getSql } from "@/lib/db";
 import {
@@ -12,6 +13,10 @@ import {
 import { getCurrentUserProfile } from "@/lib/forum-service";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { normalizeNickname, validateNickname } from "@/lib/rules";
+import {
+  deleteStorageImagesByUrls,
+  validateOwnedStorageImageUrls,
+} from "@/lib/storage-cleanup";
 import { createSupabaseAdminClient } from "@/lib/supabase/admin";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -139,6 +144,33 @@ export async function updateProfileAction(input: {
   }
   const nickname = normalizeNickname(rawNickname);
 
+  const rate = checkRateLimit(`profile-update:${user.id}`, {
+    maxRequests: 15,
+    windowMs: 5 * 60 * 1000,
+  });
+  if (!rate.allowed) {
+    return {
+      ok: false,
+      error: `Bạn cập nhật hồ sơ quá nhanh. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+    };
+  }
+
+  let safeAvatarUrl: string | null = null;
+  if (input.avatarUrl && input.avatarUrl.trim()) {
+    const avatarCheck = validateOwnedStorageImageUrls({
+      urls: [input.avatarUrl],
+      ownerUserId: user.id,
+      userRole: user.role,
+      folder: "avatars",
+      existingAllowedUrls: user.avatarUrl ? [user.avatarUrl] : [],
+      maxCount: 1,
+    });
+    if (!avatarCheck.ok) {
+      return { ok: false, error: avatarCheck.error };
+    }
+    safeAvatarUrl = avatarCheck.urls[0] ?? null;
+  }
+
   const grade = input.gradeLevel.trim().slice(0, 30) || "THPT";
   const bio = input.bio.trim().slice(0, 300);
 
@@ -151,14 +183,25 @@ export async function updateProfileAction(input: {
         nickname = ${nickname},
         grade_level = ${grade},
         bio = ${bio},
-        avatar_url = ${input.avatarUrl},
+        avatar_url = ${safeAvatarUrl},
         updated_at = NOW()
       WHERE id = ${user.id}
     `;
 
+    if (user.avatarUrl && user.avatarUrl !== safeAvatarUrl) {
+      const replacedAvatar = user.avatarUrl;
+      after(async () => {
+        await deleteStorageImagesByUrls([replacedAvatar], {
+          ownerUserId: user.id,
+          folder: "avatars",
+        });
+      });
+    }
+
     revalidateTag(CACHE_TAGS.leaderboard);
     revalidateTag(CACHE_TAGS.threads);
     revalidatePath("/profile");
+    revalidatePath(`/members/${user.id}`);
     revalidatePath("/leaderboard");
     revalidatePath("/admin");
     revalidatePath("/");
@@ -185,6 +228,17 @@ export async function changeOwnPasswordAction(input: {
   const user = await getCurrentUserProfile();
   if (!user) {
     return { ok: false, error: "Bạn cần đăng nhập để đổi mật khẩu." };
+  }
+
+  const rate = checkRateLimit(`change-password:${user.id}`, {
+    maxRequests: 5,
+    windowMs: 15 * 60 * 1000,
+  });
+  if (!rate.allowed) {
+    return {
+      ok: false,
+      error: `Bạn thử đổi mật khẩu quá nhiều lần. Vui lòng thử lại sau ${rate.retryAfterSeconds} giây.`,
+    };
   }
 
   const newPassword = input.newPassword;

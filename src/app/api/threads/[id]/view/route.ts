@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isDatabaseConfigured } from "@/lib/env";
 import { incrementThreadViewCount } from "@/lib/forum-service";
 import { checkRateLimit } from "@/lib/rate-limit";
@@ -33,10 +33,13 @@ export async function POST(
     return NextResponse.json({ ok: true, deduped: true });
   }
 
-  try {
-    const updated = await incrementThreadViewCount(id);
-    return NextResponse.json({ ok: updated });
-  } catch {
-    return NextResponse.json({ ok: false }, { status: 200 });
-  }
+  after(async () => {
+    try {
+      await incrementThreadViewCount(id);
+    } catch {
+      // ignore non-critical view counter failure
+    }
+  });
+
+  return NextResponse.json({ ok: true });
 }

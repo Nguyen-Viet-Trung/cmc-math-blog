@@ -155,6 +155,54 @@
   color: hsl(var(--foreground));
 }
 
+.math-prose h1,
+.math-prose h2,
+.math-prose h3,
+.math-prose h4 {
+  scroll-margin-top: 76px;
+  color: hsl(var(--foreground));
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+
+.math-prose h2 {
+  font-size: 1.2rem;
+  line-height: 1.35;
+  margin-top: 1.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid hsl(var(--border));
+}
+
+.math-prose h3 {
+  font-size: 1.02rem;
+  line-height: 1.4;
+  margin-top: 1.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.math-prose h4 {
+  font-size: 0.9375rem;
+  line-height: 1.45;
+  margin-top: 1.1rem;
+  margin-bottom: 0.4rem;
+}
+
+.math-prose > :first-child {
+  margin-top: 0;
+}
+
+.math-prose strong {
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.math-prose hr {
+  border: 0;
+  border-top: 1px solid hsl(var(--border));
+  margin: 1.5rem 0;
+}
+
 .math-prose p {
   margin-top: 0;
   margin-bottom: 0.85rem;

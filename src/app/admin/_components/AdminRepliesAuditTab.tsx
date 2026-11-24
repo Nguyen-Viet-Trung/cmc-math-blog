@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, Search } from "lucide-react";
@@ -20,10 +20,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useDebouncedValue } from "@/hooks/useAdminPaginatedList";
 import { paginateSlice } from "@/lib/pagination";
 import { analyzeAdminReplyAudits } from "@/lib/rules";
-import type { AdminReplyAuditItem } from "@/lib/types";
+import type { AdminReplyAuditItem, ReplySuspicionCode } from "@/lib/types";
 import type { AdminNotice } from "./AdminRewardsTab";
 
 const EMPTY_REPLIES: AdminReplyAuditItem[] = [];
+
+const EMPTY_SUSPICION_FLAGS: ReplySuspicionCode[] = [];
 
 export function AdminRepliesAuditTab({
   search,
@@ -188,6 +190,20 @@ export function AdminRepliesAuditTab({
     }
   }
 
+  const handleRequestRevoke = useCallback(
+    (reply: AdminReplyAuditItem, reason: string) => {
+      setConfirmAction({ kind: "revoke", reply, reason });
+    },
+    []
+  );
+
+  const handleRequestDelete = useCallback(
+    (reply: AdminReplyAuditItem, reason: string) => {
+      setConfirmAction({ kind: "delete", reply, reason });
+    },
+    []
+  );
+
   if (repliesQuery.isLoading) {
     return (
       <Card className="space-y-3 p-5">
@@ -339,14 +355,10 @@ export function AdminRepliesAuditTab({
             <AdminReplyAuditCard
               key={r.id}
               reply={r}
-              flags={flagsByReplyId[r.id] ?? []}
+              flags={flagsByReplyId[r.id] ?? EMPTY_SUSPICION_FLAGS}
               isBusy={busyId === r.id}
-              onRevoke={(reason) =>
-                setConfirmAction({ kind: "revoke", reply: r, reason })
-              }
-              onDelete={(reason) =>
-                setConfirmAction({ kind: "delete", reply: r, reason })
-              }
+              onRevoke={handleRequestRevoke}
+              onDelete={handleRequestDelete}
             />
           ))}
           <PaginationBar

@@ -17,7 +17,7 @@ interface AppMobileDrawerProps {
   siteName: string;
   effectivePath: string;
   user: UserProfile | null;
-  onSignOut: () => Promise<void>;
+  onSignOut: () => void;
 }
 
 export function AppMobileDrawer({

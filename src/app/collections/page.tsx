@@ -17,6 +17,8 @@ import { formatRelativeDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { CollectionsAdminAction } from "./_components/CollectionsAdminAction";
 
+export const revalidate = 120;
+
 export const metadata: Metadata = {
   title: "Bộ sưu tập Chuyên đề",
   description:

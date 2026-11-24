@@ -30,6 +30,14 @@ export interface SiteSettings {
   announcement: string;
 }
 
+export interface ForumDocument {
+  slug: string;
+  title: string;
+  content: string;
+  updatedAt: string;
+  updatedByName: string | null;
+}
+
 export type ThreadType = "question" | "news" | "research" | "challenge";
 export type ThreadStatus = "open" | "solved" | "closed";
 
@@ -323,6 +331,18 @@ export interface PaginatedThreadsResult {
   page: number;
   pageSize: number;
   totalPages: number;
+}
+
+export interface PublicLeaderboardEntry {
+  id: string;
+  displayName: string;
+  nickname: string;
+  avatarUrl: string | null;
+  bio: string;
+  gradeLevel: string;
+  role: "student" | "admin";
+  totalEarnedPoints: number;
+  solvedCount: number;
 }
 
 export interface PublicMemberProfile {
